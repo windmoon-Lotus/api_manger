@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+{% block body %}
+    <div class="container">
+        <div class="logo"><a href="{{ url_for('web.home') }}">AuthCheck v0.1</a></div>
+        <div class="left_open">
+            <i title="Expand Left" class="iconfont">&#xe699;</i>
+        </div>
+        <ul class="layui-nav right" lay-filter="">
+            <li class="layui-nav-item">
+                <a href="javascript:;">{{ t('lang_toggle') }}: {{ t('lang_' + get_lang()) }}</a>
+                <dl class="layui-nav-child">
+                    <dd><a href="{{ url_for('web.set_lang', lang='zh', next=request.url) }}">{{ t('lang_zh') }}</a></dd>
+                    <dd><a href="{{ url_for('web.set_lang', lang='en', next=request.url) }}">{{ t('lang_en') }}</a></dd>
+                </dl>
+            </li>
+            <li class="layui-nav-item">
+                <a href="javascript:;">{{ session['username'] }}</a>
+                <dl class="layui-nav-child">
+                    <dd><a href="{{ url_for('web.logout') }}">{{ t('nav_logout') }}</a></dd>
+                </dl>
+            </li>
+            <li class="layui-nav-item to-index"><a href="{{ url_for('web.home') }}">{{ t('nav_home') }}</a></li>
+        </ul>
+    </div>
+
+    <div class="left-nav">
+        <div id="side-nav">
+            <ul id="nav">
+                {% if is_manager() %}
+                    <li>
+                        <a href="javascript:;">
+                            <i class="iconfont">&#xe726;</i>
+                            <cite>{{ t('nav_admin') }}</cite>
+                            <i class="iconfont nav_right">&#xe697;</i>
+                        </a>
+                        <ul class="sub-menu">
+                            <li>
+                                <a _href="{{ url_for('web.sso_account') }}">
+                                    <i class="iconfont">&#xe6a7;</i>
+                                    <cite>{{ t('nav_accounts') }}</cite>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                {% endif %}
+                <li>
+                    <a href="javascript:;">
+                        <i class="layui-icon layui-icon-spread-left"></i>
+                        <cite>{{ t('nav_traffic') }}</cite>
+                        <i class="iconfont nav_right">&#xe697;</i>
+                    </a>
+                    <ul class="sub-menu">
+                        <li><a _href="{{ url_for('web.workspace') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_workspace') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.rawdata') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_api_management') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.import_data') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_import_center') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.parameter_relations') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_param_relations') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.ops_panel') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_ops') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.privilege_tasks') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_privilege_tasks') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.vuln_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_vuln') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.code_review_web') }}"><i class="iconfont">&#xe6a7;</i><cite>代码待确认</cite></a></li>
+                        <li><a _href="{{ url_for('web.version_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_version') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.testcase_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_testcase') }}</cite></a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="page-content">
+        <div class="layui-tab tab" lay-filter="xbs_tab" lay-allowclose="false">
+            <ul class="layui-tab-title">
+                <li class="home"><i class="layui-icon">&#xe68e;</i>Dashboard</li>
+            </ul>
+            <div class="layui-unselect layui-form-select layui-form-selected" id="tab_right">
+                <dl>
+                    <dd data-type="this">Close Current</dd>
+                    <dd data-type="other">Close Others</dd>
+                    <dd data-type="all">Close All</dd>
+                </dl>
+            </div>
+            <div class="layui-tab-content">
+                <div class="layui-tab-item layui-show">
+                    <iframe src="{{ url_for('web.welcome') }}" frameborder="0" scrolling="yes" class="x-iframe"></iframe>
+                </div>
+            </div>
+            <div id="tab_show"></div>
+        </div>
+    </div>
+    <div class="page-content-bg"></div>
+
+    <div class="footer">
+        <div class="copyright">Copyright Security Team</div>
+    </div>
+{% endblock %}

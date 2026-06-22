@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.env
+.env.*
+.secrets/
+../.secrets/
+*.private.json
+*.private.*
+venv/
+.venv/
+env/
+
+# IDE/editor
+.idea/
+.vscode/
+.ai/
+
+# Runtime data and sensitive traffic/spec exports
+*.har
+*.HAR
+runtime_*
+*.db
+*.sqlite
+*.sqlite3
+*.log
+apiAnalysis/web/uploads/
+apiAnalysis/test_flows
+*.flow
+*.flows
+*.mitm
+*.mitmproxy
+
+# Imported API specs may contain live examples/tokens.
+*.openapi.json
+*.postman.json
+postman_collection*.json
+
+# Interface dumps & test data/results (excluded from the base upload)
+security_reports/
+security_profiles/
+schemathesis-report/
+.hypothesis/
+*.junit
+junit-*.xml
+
+# Engagement-specific scripts/docs (target-internal hosts & accounts; kept local, not uploaded)
+tools/*pgy*
+tools/gg_*
+tools/*sunlogin*
+docs/sunlogin_*
+
+# OS
+Thumbs.db
+.DS_Store
+
+AGENTS.md
+docs/sunlogin_*
+docs/apifox_api_manager_security_workflow.md
+docs/claude_bughunter_reuse_index.md

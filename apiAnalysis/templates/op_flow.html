@@ -1,0 +1,276 @@
+{% extends "layout.html" %}
+
+{% block head %}
+    <!--[if lt IE 9]>
+<script src="{{ url_for('static', filename='lib/html5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='lib/respond.min.js') }}"></script>
+<![endif]-->
+{% endblock %}
+
+{% block body %}
+    <div class="x-body">
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md12">
+                <blockquote class="layui-elem-quote">
+                    {{ t('ops_title') }}
+                </blockquote>
+            </div>
+        </div>
+
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_api') }}</div><div class="layui-card-body">{{ stats.raw_count }}</div></div></div>
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_rel') }}</div><div class="layui-card-body">{{ stats.relation_count }}</div></div></div>
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_todo') }}</div><div class="layui-card-body">{{ stats.task_init_count }}</div></div></div>
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_done') }}</div><div class="layui-card-body">{{ stats.task_done_count }}</div></div></div>
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_skip') }}</div><div class="layui-card-body">{{ stats.task_skip_count }}</div></div></div>
+            <div class="layui-col-md2"><div class="layui-card"><div class="layui-card-header">{{ t('ops_stats_vuln') }}</div><div class="layui-card-body">{{ stats.vuln_count }}</div></div></div>
+        </div>
+
+        {% if result %}
+            <div class="layui-row" style="margin-top: 12px;">
+                <div class="layui-col-md12">
+                    {% if result_level == 'success' %}
+                        <div class="layui-bg-green" style="padding: 10px 14px;">{{ result }}</div>
+                    {% elif result_level == 'warning' %}
+                        <div class="layui-bg-orange" style="padding: 10px 14px;">{{ result }}</div>
+                    {% else %}
+                        <div class="layui-bg-red" style="padding: 10px 14px;">{{ result }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="layui-row layui-col-space15" style="margin-top: 14px;">
+            <div class="layui-col-md12">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_recommended') }}</legend>
+                    <div class="layui-field-box">
+                        <p style="margin-bottom: 10px; color: #666;">{{ t('ops_recommended_desc') }}</p>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form layui-col-space10">
+                            <input type="hidden" name="action" value="run_recommended">
+                            <div class="layui-input-inline" style="width: 320px;">
+                                <select name="account_select">
+                                    <option value="">{{ t('ops_unbound_account') }}</option>
+                                    {% for a in accounts %}
+                                        {% set aid = a.id|string %}
+                                        <option value="{{ aid }}" {% if form.account_select == aid or form.account_id == aid %}selected{% endif %}>
+                                            {{ a.username }}{% if a.describe %} ({{ a.describe }}){% endif %}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="layui-input-inline">
+                                <button class="layui-btn" type="submit">{{ t('ops_btn_run_recommended') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md6">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_step1') }}</legend>
+                    <div class="layui-field-box">
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form">
+                            <input type="hidden" name="action" value="classify_raw">
+                            <button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">{{ t('ops_btn_classify') }}</button>
+                        </form>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form" style="margin-top: 10px;">
+                            <input type="hidden" name="action" value="rebuild_params">
+                            <div class="layui-input-inline" style="width: 320px;">
+                                <select name="account_select">
+                                    <option value="">{{ t('ops_unbound_account') }}</option>
+                                    {% for a in accounts %}
+                                        {% set aid = a.id|string %}
+                                        <option value="{{ aid }}" {% if form.account_select == aid or form.account_id == aid %}selected{% endif %}>
+                                            {{ a.username }}{% if a.describe %} ({{ a.describe }}){% endif %}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">{{ t('ops_btn_rebuild') }}</button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="layui-col-md6">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_step2') }}</legend>
+                    <div class="layui-field-box">
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form">
+                            <input type="hidden" name="action" value="infer_relations">
+                            <input type="hidden" name="infer_enable_value_intersection_present" value="1">
+                            <input type="hidden" name="infer_enable_same_path_not_equal_present" value="1">
+                            <input type="checkbox" name="infer_enable_value_intersection" title="{% if get_lang() == 'zh' %}启用值交集规则{% else %}Enable value intersection{% endif %}" {% if (not form.get('infer_enable_value_intersection_present')) or form.get('infer_enable_value_intersection') %}checked{% endif %}>
+                            <div class="layui-input-inline" style="width: 150px;">
+                                <input type="number" min="1" name="infer_min_overlap" value="{{ form.infer_min_overlap or 1 }}" placeholder="{% if get_lang() == 'zh' %}最小交集数{% else %}Min overlap{% endif %}" autocomplete="off" class="layui-input">
+                            </div>
+                            <input type="checkbox" name="infer_enable_name_fallback" title="{% if get_lang() == 'zh' %}启用同名兜底{% else %}Enable name fallback{% endif %}" {% if form.infer_enable_name_fallback %}checked{% endif %}>
+                            <input type="checkbox" name="infer_enable_same_path_not_equal" title="{% if get_lang() == 'zh' %}启用同路径不等{% else %}Enable same-path not-equal{% endif %}" {% if (not form.get('infer_enable_same_path_not_equal_present')) or form.get('infer_enable_same_path_not_equal') %}checked{% endif %}>
+                            <div class="layui-input-inline" style="width: 320px; margin-top: 8px;">
+                                <input type="text" name="infer_fallback_parameter_names" value="{{ form.infer_fallback_parameter_names }}" placeholder="{% if get_lang() == 'zh' %}兜底参数名(逗号分隔，可空=全部){% else %}Fallback parameter names (comma-separated, empty=all){% endif %}" autocomplete="off" class="layui-input">
+                            </div>
+                            <button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">{{ t('ops_btn_infer') }}</button>
+                        </form>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form" style="margin-top: 10px;"><input type="hidden" name="action" value="verify_relations"><button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">{{ t('ops_btn_verify') }}</button></form>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form" style="margin-top: 10px;"><input type="hidden" name="action" value="verify_relations_real"><button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">{{ t('ops_btn_verify_real') }}</button></form>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md6">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_step3') }}</legend>
+                    <div class="layui-field-box">
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form"><input type="hidden" name="action" value="prepare_privilege_tasks"><button class="layui-btn layui-btn-normal layui-btn-sm" type="submit">{{ t('ops_btn_prepare_tasks') }}</button></form>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form" style="margin-top: 10px;">
+                            <input type="hidden" name="action" value="exec_privilege">
+                            <div class="layui-input-inline"><input type="text" name="limit" value="{{ form.limit or 20 }}" placeholder="{{ t('ops_limit_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <button class="layui-btn layui-btn-normal layui-btn-sm" type="submit">{{ t('ops_btn_exec_tasks') }}</button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="layui-col-md6">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_step4') }}</legend>
+                    <div class="layui-field-box">
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form">
+                            <input type="hidden" name="action" value="exec_ai_stub">
+                            <div class="layui-input-inline"><input type="text" name="limit" value="{{ form.limit or 20 }}" placeholder="{{ t('ops_limit_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <button class="layui-btn layui-btn-warm layui-btn-sm" type="submit">{{ t('ops_btn_ai_stub') }}</button>
+                        </form>
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form" style="margin-top: 10px;">
+                            <input type="hidden" name="action" value="exec_ai_http">
+                            <div class="layui-input-inline"><input type="text" name="limit" value="{{ form.limit or 20 }}" placeholder="{{ t('ops_limit_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <div class="layui-input-inline"><input type="text" name="ai_url" value="{{ form.ai_url }}" placeholder="{{ t('ops_ai_url_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <div class="layui-input-inline"><input type="text" name="ai_key" value="{{ form.ai_key }}" placeholder="{{ t('ops_ai_key_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <button class="layui-btn layui-btn-warm layui-btn-sm" type="submit">{{ t('ops_btn_ai_http') }}</button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md12">
+                <fieldset class="layui-elem-field">
+                    <legend>{{ t('ops_format_title') }}</legend>
+                    <div class="layui-field-box">
+                        <form action="{{ url_for('web.ops_panel') }}" method="POST" class="layui-form">
+                            <input type="hidden" name="action" value="format_rawdata">
+                            {% set current_table = form.format_table or 'raw_data' %}
+                            {% set current_quick_mode = form.format_quick_mode or 'custom' %}
+                            {% set format_targets = form.getlist('format_targets') if form else [] %}
+                            <div class="layui-input-inline" style="width: 320px; margin-bottom: 8px;">
+                                <select id="format_table" name="format_table">
+                                    {% for tbl in format_table_options %}
+                                        <option value="{{ tbl.key }}" data-supports-filter="{{ 1 if tbl.supports_filter else 0 }}"
+                                                {% if current_table == tbl.key %}selected{% endif %}>{{ tbl.label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="layui-input-inline" style="width: 280px; margin-bottom: 8px;">
+                                <select id="format_quick_mode" name="format_quick_mode" data-current="{{ current_quick_mode }}">
+                                    <option value="custom">{{ t('ops_format_custom') }}</option>
+                                </select>
+                            </div>
+                            <div style="margin-bottom: 8px; color: #666;">{{ t('ops_format_desc') }}</div>
+                            {% for tbl in format_table_options %}
+                                <div class="format-target-group" data-table="{{ tbl.key }}"
+                                     style="{% if current_table != tbl.key %}display:none;{% endif %} margin-bottom: 8px;">
+                                    {% for key, label in tbl.targets.items() %}
+                                        <input type="checkbox" name="format_targets" value="{{ key }}" title="{{ label }}"
+                                               {% if current_table == tbl.key and ((format_targets and key in format_targets) or (not format_targets)) %}checked{% endif %}>
+                                    {% endfor %}
+                                </div>
+                            {% endfor %}
+                            <div id="format_filter_wrap">
+                                <div class="layui-input-inline"><input type="text" name="format_action_filter" value="{{ form.format_action_filter }}" placeholder="{{ t('ops_format_action_ph') }}" autocomplete="off" class="layui-input"></div>
+                                <div class="layui-input-inline"><input type="text" name="format_path_regex" value="{{ form.format_path_regex }}" placeholder="{{ t('ops_format_path_ph') }}" autocomplete="off" class="layui-input"></div>
+                            </div>
+                            <div class="layui-input-inline"><input type="text" name="format_limit" value="{{ form.format_limit or 0 }}" placeholder="{{ t('ops_format_limit_ph') }}" autocomplete="off" class="layui-input"></div>
+                            <input type="checkbox" name="format_dry_run" title="{{ t('ops_format_dry_run') }}" {% if form.format_dry_run %}checked{% endif %}>
+                            <button class="layui-btn layui-btn-danger layui-btn-sm" type="submit">{{ t('ops_btn_format') }}</button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                var quickModes = {{ format_quick_modes|tojson }};
+                function syncQuickModeOptions(table) {
+                    var modeSelect = document.getElementById('format_quick_mode');
+                    if (!modeSelect) return;
+                    var current = modeSelect.getAttribute('data-current') || 'custom';
+                    var modes = quickModes[table] || [];
+                    var options = ['<option value="custom">{{ t("ops_format_custom") }}</option>'];
+                    modes.forEach(function (item) { options.push('<option value="' + item.key + '">' + item.label + '</option>'); });
+                    modeSelect.innerHTML = options.join('');
+                    var exists = false;
+                    for (var i = 0; i < modeSelect.options.length; i++) { if (modeSelect.options[i].value === current) { exists = true; break; } }
+                    modeSelect.value = exists ? current : 'custom';
+                    modeSelect.setAttribute('data-current', modeSelect.value);
+                }
+                function syncQuickModeEffect() {
+                    var tableSelect = document.getElementById('format_table');
+                    var modeSelect = document.getElementById('format_quick_mode');
+                    if (!tableSelect || !modeSelect) return;
+                    var table = tableSelect.value;
+                    var quickMode = modeSelect.value || 'custom';
+                    var useManual = quickMode === 'custom';
+                    var groups = document.querySelectorAll('.format-target-group');
+                    groups.forEach(function (group) {
+                        var active = group.getAttribute('data-table') === table;
+                        var inputs = group.querySelectorAll('input[name="format_targets"]');
+                        inputs.forEach(function (input) { input.disabled = !active || !useManual; });
+                    });
+                }
+                function syncFormatTable() {
+                    var select = document.getElementById('format_table');
+                    if (!select) return;
+                    var table = select.value;
+                    var opt = select.options[select.selectedIndex];
+                    var supportsFilter = (opt && opt.getAttribute('data-supports-filter') === '1');
+                    syncQuickModeOptions(table);
+                    var groups = document.querySelectorAll('.format-target-group');
+                    groups.forEach(function (group) { group.style.display = group.getAttribute('data-table') === table ? '' : 'none'; });
+                    var filterWrap = document.getElementById('format_filter_wrap');
+                    if (filterWrap) {
+                        filterWrap.style.display = supportsFilter ? '' : 'none';
+                        var filterInputs = filterWrap.querySelectorAll('input');
+                        filterInputs.forEach(function (input) { input.disabled = !supportsFilter; });
+                    }
+                    syncQuickModeEffect();
+                }
+                document.addEventListener('DOMContentLoaded', function () {
+                    syncFormatTable();
+                    var tableSelect = document.getElementById('format_table');
+                    var modeSelect = document.getElementById('format_quick_mode');
+                    if (tableSelect) tableSelect.addEventListener('change', function () { if (modeSelect) modeSelect.setAttribute('data-current', 'custom'); syncFormatTable(); });
+                    if (modeSelect) modeSelect.addEventListener('change', function () { modeSelect.setAttribute('data-current', modeSelect.value); syncQuickModeEffect(); });
+                });
+            })();
+        </script>
+
+        <div class="layui-row" style="margin-top: 10px;">
+            <div class="layui-col-md12">
+                <div class="layui-card">
+                    <div class="layui-card-header">{{ t('ops_tips_title') }}</div>
+                    <div class="layui-card-body">
+                        <p>1. {{ t('ops_tip_1') }}</p>
+                        <p>2. {{ t('ops_tip_2') }}</p>
+                        <p>3. {{ t('ops_tip_3') }}</p>
+                        <p>4. {{ t('ops_tip_4') }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

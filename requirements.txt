@@ -1,0 +1,11 @@
+APScheduler
+Flask
+Flask-Cors
+Jinja2
+Werkzeug
+mongoengine
+mitmproxy
+openpyxl
+pymongo
+redis
+requests

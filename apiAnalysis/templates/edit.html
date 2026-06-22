@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+    <h1 class="mb-4">Edit {{ collection_name }}</h1>
+    <form method="POST">
+        {% for field in editable_fields %}
+        <div class="form-group">
+            <label for="{{ field }}">{{ field|capitalize }}</label>
+            <input type="text" name="{{ field }}" class="form-control" value="{{ document[field] }}" required>
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Update</button>
+    </form>
+{% endblock %}

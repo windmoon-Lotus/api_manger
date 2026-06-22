@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+    <h1 class="mb-4">{{ collection_name }} Management</h1>
+
+    <!-- 筛选表单 -->
+    <form method="get" class="mb-4">
+        <div class="form-row">
+            <div class="col">
+                <input type="text" name="filter_name" class="form-control" placeholder="Filter by name" value="{{ filter_name }}">
+            </div>
+            <div class="col">
+                <button type="submit" class="btn btn-primary">Filter</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- 添加数据表单 -->
+    <form action="/add" method="POST" class="mb-4">
+        <div class="form-row">
+            {% for field in editable_fields %}
+            <div class="col">
+                <input type="text" name="{{ field }}" class="form-control" placeholder="{{ field|capitalize }}" required>
+            </div>
+            {% endfor %}
+            <div class="col">
+                <button type="submit" class="btn btn-success">Add</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- 数据表格 -->
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                {% for field in editable_fields %}
+                <th>
+                    <a href="?sort_field={{ field }}&sort_direction={% if sort_field == field and sort_direction == 'asc' %}desc{% else %}asc{% endif %}&filter_name={{ filter_name }}">
+                        {{ field|capitalize }}
+                    </a>
+                </th>
+                {% endfor %}
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for document in documents %}
+            <tr>
+                {% for field in editable_fields %}
+                <td>{{ document[field] }}</td>
+                {% endfor %}
+                <td>
+                    <!-- 编辑按钮，触发模态框 -->
+                    <button class="btn btn-warning btn-sm edit-btn" data-id="{{ document.id }}" data-toggle="modal" data-target="#editModal">
+                        Edit
+                    </button>
+                    <a href="/delete/{{ document.id }}" class="btn btn-danger btn-sm">Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- 分页控件 -->
+    {{ pagination.links }}
+
+    <!-- 编辑模态框 -->
+    <div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editModalLabel">Edit {{ collection_name }}</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <!-- 编辑表单 -->
+                    <form id="editForm" method="POST">
+                        {% for field in editable_fields %}
+                        <div class="form-group">
+                            <label for="{{ field }}">{{ field|capitalize }}</label>
+                            <input type="text" name="{{ field }}" class="form-control" id="edit-{{ field }}" required>
+                        </div>
+                        {% endfor %}
+                        <input type="hidden" name="id" id="edit-id">
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="submit" form="editForm" class="btn btn-primary">Save changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function () {
+        // 编辑按钮点击事件
+        $('.edit-btn').on('click', function () {
+            // 获取当前行的数据
+            const id = $(this).data('id');
+            const row = $(this).closest('tr');
+
+            // 填充数据到模态框
+            $('#edit-id').val(id);
+            {% for field in editable_fields %}
+            $('#edit-{{ field }}').val(row.find('td:eq({{ loop.index0 }})').text());
+            {% endfor %}
+
+            // 显示模态框
+            $('#editModal').modal('show');
+        });
+
+        // 表单提交事件
+        $('#editForm').on('submit', function (e) {
+            e.preventDefault();
+
+            // 将表单数据转换为 JSON
+            const formData = {};
+            $(this).serializeArray().forEach(function (item) {
+                formData[item.name] = item.value;
+            });
+
+            // 发送 AJAX 请求
+            $.ajax({
+                url: '/edit/' + $('#edit-id').val(),
+                method: 'POST',
+                contentType: 'application/json',  // 设置请求头为 JSON
+                data: JSON.stringify(formData),   // 将数据转换为 JSON 字符串
+                success: function (response) {
+                    location.reload(); // 刷新页面
+                },
+                error: function (xhr, status, error) {
+                    alert('Error updating data');
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

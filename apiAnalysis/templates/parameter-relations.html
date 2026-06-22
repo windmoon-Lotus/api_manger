@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+
+{% block head %}
+    <!--[if lt IE 9]>
+<script src="{{ url_for('static', filename='lib/html5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='lib/respond.min.js') }}"></script>
+<![endif]-->
+{% endblock %}
+
+{% block body %}
+    <div class="x-body">
+        <div class="layui-row">
+            <form id="p_form" action="{{ url_for('web.parameter_relations') }}" method="GET"
+                  class="layui-form layui-col-space5">
+                <input id="url" type="hidden" value="{{ url_for('web.parameter_relations') }}">
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.parameter }}" name="parameter" placeholder="parameter"
+                           autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.relation }}" name="relation" placeholder="relation"
+                           autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <select name="verified">
+                        <option value="">verified</option>
+                        <option value="true" {% if form.verified == 'true' %}selected{% endif %}>true</option>
+                        <option value="false" {% if form.verified == 'false' %}selected{% endif %}>false</option>
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn" lay-submit="" lay-filter="sreach">
+                        <i class="layui-icon">&#xe615;</i></button>
+                </div>
+            </form>
+        </div>
+        <xblock>
+            <span class="x-right" style="line-height:40px">Total: {{ count }}</span>
+        </xblock>
+        <table class="layui-table">
+            <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>ReqPathId</th>
+                <th>ResPathId</th>
+                <th>Relation</th>
+                <th>Rule</th>
+                <th>Verified</th>
+                <th>Evidence</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in hits %}
+                <tr>
+                    <td>{{ row.parameter }}</td>
+                    <td>{{ row.req_pathid }}</td>
+                    <td>{{ row.res_pathid }}</td>
+                    <td>{{ row.relation }}</td>
+                    <td>{{ row.rule }}</td>
+                    <td>{{ row.verified }}</td>
+                    <td>{{ row.evidence }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div class="page">
+            <div>
+                {% if hit.per_page %}
+                    <span onclick="page_flush('{{ hit.per_page }}', '{{ size }}')" style="cursor:pointer"
+                          class="prev">&lt;&lt;</span>
+                {% endif %}
+
+                {% if hit.p_min %}
+                    <span onclick="page_flush('{{ hit.p_min }}', '{{ size }}')" style="cursor:pointer"
+                          class="num">{{ hit.p_min }}</span>
+                {% endif %}
+
+                {% if hit.per_ellipsis %}
+                    <span class="num" style="cursor: pointer"> ... </span>
+                {% endif %}
+
+                {% for p in hit.dic %}
+                    <span onclick="page_flush('{{ p }}', '{{ size }}')"
+                            {% if p == page %} class="current" {% else %} class="num" {% endif %}
+                          style="cursor: pointer">{{ p }}</span>
+                {% endfor %}
+
+                {% if hit.suf_ellipsis %}
+                    <span class="num" style="cursor: pointer"> ... </span>
+                {% endif %}
+
+                {% if hit.p_max %}
+                    <span onclick="page_flush('{{ hit.p_max }}', '{{ size }}')" style="cursor:pointer"
+                          class="num">{{ hit.p_max }}</span>
+                {% endif %}
+
+                {% if hit.next_page %}
+                    <span onclick="page_flush('{{ hit.next_page }}', '{{ size }}')" class="next"
+                          style="cursor:pointer">&gt;&gt;</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function page_flush(page, size) {
+            let url = $("#url").val() + "?page=" + page + "&size=" + size;
+            $("#p_form")[0].action = url;
+            $("#p_form").submit();
+        }
+    </script>
+{% endblock %}

@@ -1,0 +1,206 @@
+{% extends "layout.html" %}
+
+{% block head %}
+    <!--[if lt IE 9]>
+<script src="{{ url_for('static', filename='lib/html5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='lib/respond.min.js') }}"></script>
+<![endif]-->
+{% endblock %}
+
+{% block body %}
+    <div class="x-body">
+        {% if result %}
+            <div class="layui-row" style="margin-bottom: 10px;">
+                <div class="layui-col-md12">
+                    {% if result_level == 'success' %}
+                        <div class="layui-bg-green" style="padding: 10px 14px;">{{ result }}</div>
+                    {% elif result_level == 'warning' %}
+                        <div class="layui-bg-orange" style="padding: 10px 14px;">{{ result }}</div>
+                    {% else %}
+                        <div class="layui-bg-red" style="padding: 10px 14px;">{{ result }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="layui-row">
+            <form id="p_form" action="{{ url_for('web.rawdata') }}?page={{ page }}&size={{ size }}"
+                  method="POST" class="layui-form layui-col-space5">
+                <input id="url" type="hidden" value="{{ url_for('web.rawdata') }}">
+                <input type="hidden" name="op_action" value="filter">
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.filter_action }}" name="filter_action"
+                           placeholder="{{ t('raw_filter_action') }}" autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.filter_path }}" name="filter_path"
+                           placeholder="{{ t('raw_filter_path') }}" autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn" lay-submit="" lay-filter="search">
+                        <i class="layui-icon">&#xe615;</i>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="layui-row" style="margin-top: 10px;">
+            <form id="batch_form" action="{{ url_for('web.rawdata') }}?page={{ page }}&size={{ size }}"
+                  method="POST" class="layui-form layui-col-space5">
+                <input type="hidden" id="op_action" name="op_action" value="">
+                <input type="hidden" name="filter_action" value="{{ form.filter_action }}">
+                <input type="hidden" name="filter_path" value="{{ form.filter_path }}">
+
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="batch_action" placeholder="{{ t('raw_batch_action') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="batch_rule" placeholder="{{ t('raw_batch_rule') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="batch_tags" placeholder="{{ t('raw_batch_tags') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="batch_modificator" placeholder="{{ t('raw_batch_modificator') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn layui-btn-normal" type="button" onclick="submitBatch('batch_update')">
+                        {{ t('raw_btn_batch_update') }}
+                    </button>
+                </div>
+
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="replay_note" placeholder="{{ t('raw_replay_note') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="checkbox" name="auto_vuln_on_fail" title="{{ t('raw_auto_vuln') }}">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="replay_fail_scenario" value="replay_verify" placeholder="{{ t('raw_replay_scenario') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="replay_fail_severity" value="medium" placeholder="{{ t('raw_replay_severity') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn layui-btn-warm" type="button" onclick="submitBatch('batch_replay_verify')">
+                        {{ t('raw_btn_replay') }}
+                    </button>
+                </div>
+
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="vuln_scenario" value="manual_link" placeholder="{{ t('raw_vuln_scenario') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="vuln_severity" value="medium" placeholder="{{ t('raw_vuln_severity') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="vuln_status" value="open" placeholder="{{ t('raw_vuln_status') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" name="vuln_result" value="linked from interface manager" placeholder="{{ t('raw_vuln_result') }}" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn layui-btn-danger" type="button" onclick="submitBatch('batch_link_vuln')">
+                        {{ t('raw_btn_link_vuln') }}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <xblock>
+            <span class="x-right" style="line-height:40px">{{ t('raw_title_total') }}: {{ count }}</span>
+        </xblock>
+
+        <table class="layui-table">
+            <thead>
+            <tr>
+                <th><input type="checkbox" id="select_all"></th>
+                <th>{{ t('raw_col_method') }}</th>
+                <th>{{ t('raw_col_path') }}</th>
+                <th>{{ t('raw_col_action') }}</th>
+                <th>{{ t('raw_col_rule') }}</th>
+                <th>{{ t('raw_col_desc') }}</th>
+                <th>{{ t('raw_col_tags') }}</th>
+                <th>{{ t('raw_col_modificator') }}</th>
+                <th>{{ t('raw_col_save') }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in hits %}
+                <tr>
+                    <form action="{{ url_for('web.rawdata') }}?page={{ page }}&size={{ size }}" method="POST">
+                        <input type="hidden" name="op_action" value="single_update">
+                        <input type="hidden" name="raw_id" value="{{ row.id }}">
+                        <input type="hidden" name="filter_action" value="{{ form.filter_action }}">
+                        <input type="hidden" name="filter_path" value="{{ form.filter_path }}">
+                        <td><input type="checkbox" class="raw-selector" form="batch_form" name="raw_ids" value="{{ row.id }}"></td>
+                        <td>{{ row.method }}</td>
+                        <td title="{{ row.path }}">{{ row.path }}</td>
+                        <td><input type="text" name="action" value="{{ row.action }}" class="layui-input"></td>
+                        <td><input type="text" name="rule" value="{{ row.rule }}" class="layui-input"></td>
+                        <td><input type="text" name="des" value="{{ row.des }}" class="layui-input"></td>
+                        <td><input type="text" name="tags" value="{{ row.tags }}" class="layui-input"></td>
+                        <td><input type="text" name="modificator" value="{{ row.modificator }}" class="layui-input"></td>
+                        <td><button class="layui-btn layui-btn-sm" type="submit">{{ t('raw_btn_save') }}</button></td>
+                    </form>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="page">
+            <div>
+                {% if hit.per_page %}
+                    <span onclick="page_flush('{{ hit.per_page }}', '{{ size }}')" style="cursor:pointer"
+                          class="prev">&lt;&lt;</span>
+                {% endif %}
+                {% if hit.p_min %}
+                    <span onclick="page_flush('{{ hit.p_min }}', '{{ size }}')" style="cursor:pointer"
+                          class="num">{{ hit.p_min }}</span>
+                {% endif %}
+                {% if hit.per_ellipsis %}
+                    <span class="num" style="cursor: pointer"> ... </span>
+                {% endif %}
+                {% for p in hit.dic %}
+                    <span onclick="page_flush('{{ p }}', '{{ size }}')"
+                            {% if p == page %} class="current" {% else %} class="num" {% endif %}
+                          style="cursor: pointer">{{ p }}</span>
+                {% endfor %}
+                {% if hit.suf_ellipsis %}
+                    <span class="num" style="cursor: pointer"> ... </span>
+                {% endif %}
+                {% if hit.p_max %}
+                    <span onclick="page_flush('{{ hit.p_max }}', '{{ size }}')" style="cursor:pointer"
+                          class="num">{{ hit.p_max }}</span>
+                {% endif %}
+                {% if hit.next_page %}
+                    <span onclick="page_flush('{{ hit.next_page }}', '{{ size }}')" class="next"
+                          style="cursor:pointer">&gt;&gt;</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function submitBatch(actionName) {
+            let checked = document.querySelectorAll(".raw-selector:checked");
+            if (checked.length === 0) {
+                alert("{{ t('raw_alert_select') }}");
+                return;
+            }
+            document.getElementById("op_action").value = actionName;
+            document.getElementById("batch_form").submit();
+        }
+
+        function page_flush(page, size) {
+            let url = $("#url").val() + "?page=" + page + "&size=" + size;
+            $("#p_form")[0].action = url;
+            $("#p_form").submit();
+        }
+
+        $("#select_all").on("change", function () {
+            let checked = $(this).is(":checked");
+            $(".raw-selector").prop("checked", checked);
+        });
+    </script>
+{% endblock %}

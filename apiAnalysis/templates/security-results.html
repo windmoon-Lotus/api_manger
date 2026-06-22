@@ -1,0 +1,347 @@
+{% extends "layout.html" %}
+
+{% block body %}
+    <div class="x-body">
+        {% if result %}
+            <blockquote class="layui-elem-quote {% if result_level == 'success' %}layui-quote-nm{% endif %}">
+                {{ result }}
+            </blockquote>
+        {% endif %}
+
+        <div class="layui-row">
+            <form id="p_form" action="{{ url_for('web.security_results_web') }}" method="GET"
+                  class="layui-form layui-col-space5">
+                <input id="url" type="hidden" value="{{ url_for('web.security_results_web') }}">
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.check_type }}" name="check_type" placeholder="check_type"
+                           autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <select name="verdict">
+                        <option value="">verdict</option>
+                        {% for v in ['need_review','potential_vuln','no_vuln','not_evaluable','error'] %}
+                            <option value="{{ v }}" {% if form.verdict == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <select name="triage">
+                        <option value="">triage</option>
+                        {% for v in ['ownership_unclear','likely_public_data','account_isolated','error_like'] %}
+                            <option value="{{ v }}" {% if form.triage == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <input type="text" value="{{ form.pathid }}" name="pathid" placeholder="pathid"
+                           autocomplete="off" class="layui-input">
+                </div>
+                <div class="layui-input-inline layui-show-xs-block" style="width:140px;">
+                    <select name="fix_status">
+                        <option value="">修复状态</option>
+                        {% for v in ['pending_confirm','pending_review','fixing','fixed_pending_verify','verified_fixed','false_positive','accepted_risk'] %}
+                            <option value="{{ v }}" {% if form.fix_status == v %}selected{% endif %}>{{ v }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block" style="width:130px;">
+                    <select name="code_queue">
+                        <option value="">全部结果</option>
+                        <option value="1" {% if form.code_queue %}selected{% endif %}>代码待确认</option>
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block" style="width:130px;">
+                    <select name="include_processed">
+                        <option value="">隐藏已处理</option>
+                        <option value="1" {% if form.include_processed %}selected{% endif %}>包含已处理</option>
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block" style="width:130px;">
+                    <select name="include_duplicates">
+                        <option value="">合并同接口</option>
+                        <option value="1" {% if form.include_duplicates %}selected{% endif %}>包含历史重复</option>
+                    </select>
+                </div>
+                <div class="layui-input-inline layui-show-xs-block">
+                    <button class="layui-btn" lay-submit="" lay-filter="search"><i class="layui-icon">&#xe615;</i></button>
+                </div>
+            </form>
+        </div>
+
+        <div class="layui-row layui-col-space10" style="margin: 10px 0;">
+            <div class="layui-col-md2">Total: <strong>{{ stats.total }}</strong></div>
+            <div class="layui-col-md2">Need Review: <strong>{{ stats.need_review }}</strong></div>
+            <div class="layui-col-md2">Potential: <strong>{{ stats.potential_vuln }}</strong></div>
+            <div class="layui-col-md2">No Vuln: <strong>{{ stats.no_vuln }}</strong></div>
+            <div class="layui-col-md2">Not Eval: <strong>{{ stats.not_evaluable }}</strong></div>
+            <div class="layui-col-md2">Error: <strong>{{ stats.error }}</strong></div>
+        </div>
+        <div class="layui-row layui-col-space10" style="margin: 4px 0 10px 0;">
+            <div class="layui-col-md2">代码待确认: <strong>{{ stats.code_queue }}</strong></div>
+            <div class="layui-col-md2">待确认: <strong>{{ stats.fix_pending_confirm }}</strong></div>
+            <div class="layui-col-md2">修复中: <strong>{{ stats.fix_fixing }}</strong></div>
+            <div class="layui-col-md2">待验证: <strong>{{ stats.fix_fixed_pending_verify }}</strong></div>
+            <div class="layui-col-md2">已验证: <strong>{{ stats.fix_verified_fixed }}</strong></div>
+            <div class="layui-col-md2">误报: <strong>{{ stats.fix_false_positive }}</strong></div>
+        </div>
+
+        <form id="batch_form" action="{{ url_for('web.security_results_web') }}" method="POST"
+              class="layui-form layui-row layui-col-space5" style="margin: 10px 0;">
+            <input type="hidden" name="filter_check_type" value="{{ form.check_type }}">
+            <input type="hidden" name="filter_verdict" value="{{ form.verdict }}">
+            <input type="hidden" name="filter_triage" value="{{ form.triage }}">
+            <input type="hidden" name="filter_pathid" value="{{ form.pathid }}">
+            <input type="hidden" name="filter_priority" value="{{ form.priority }}">
+            <input type="hidden" name="filter_fix_status" value="{{ form.fix_status }}">
+            <input type="hidden" name="filter_code_queue" value="{{ form.code_queue }}">
+            <input type="hidden" name="filter_include_processed" value="{{ form.include_processed }}">
+            <input type="hidden" name="filter_include_duplicates" value="{{ form.include_duplicates }}">
+            <input type="hidden" name="filter_page" value="{{ page }}">
+            <input type="hidden" name="filter_size" value="{{ size }}">
+            <div class="layui-input-inline" style="width:150px;">
+                <select name="manual_triage">
+                    <option value="">batch triage</option>
+                    {% for v in ['public_data','account_isolated','retest_needed','potential_issue','false_positive'] %}
+                        <option value="{{ v }}">{{ v }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline" style="width:120px;">
+                <select name="manual_status">
+                    <option value="">status</option>
+                    {% for v in ['open','done','watch','ignore'] %}
+                        <option value="{{ v }}">{{ v }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline" style="width:170px;">
+                <select name="fix_status">
+                    <option value="">fix status</option>
+                    {% for v in ['pending_confirm','pending_review','fixing','fixed_pending_verify','verified_fixed','false_positive','accepted_risk'] %}
+                        <option value="{{ v }}">{{ v }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline" style="width:110px;">
+                <input type="text" name="owner" placeholder="负责人" class="layui-input">
+            </div>
+            <div class="layui-input-inline" style="width:120px;">
+                <input type="text" name="fix_version" placeholder="修复版本" class="layui-input">
+            </div>
+            <div class="layui-input-inline" style="width:300px;">
+                <input type="text" name="manual_note" placeholder="batch note" class="layui-input">
+            </div>
+            <div class="layui-input-inline" style="width:260px;">
+                <input type="text" name="verify_note" placeholder="验证备注" class="layui-input">
+            </div>
+            <button class="layui-btn layui-btn-sm" type="submit" name="action" value="batch_review">Save Selected</button>
+            <button class="layui-btn layui-btn-warm layui-btn-sm" type="submit" name="action" value="batch_promote_vuln">转漏洞</button>
+            <button class="layui-btn layui-btn-primary layui-btn-sm" type="button" onclick="toggle_all_results(true)">Select Page</button>
+            <button class="layui-btn layui-btn-primary layui-btn-sm" type="button" onclick="toggle_all_results(false)">Clear</button>
+        </form>
+
+        <table class="layui-table">
+            <thead>
+            <tr>
+                <th style="width:44px;">Pick</th>
+                <th style="width:70px;">PathId</th>
+                <th style="width:120px;">Check</th>
+                <th style="width:110px;">Verdict</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Triage</th>
+                <th style="width:390px;">确认 / 修复 / 验证</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in hits %}
+                {% set s = summaries[row.id|string] %}
+                <tr>
+                    <td>
+                        <input class="result-pick" type="checkbox" name="result_ids" value="{{ row.id }}"
+                               form="batch_form">
+                    </td>
+                    <td>{{ s.pathid }}</td>
+                    <td>{{ row.check_type }}</td>
+                    <td>
+                        <strong>{{ row.verdict }}</strong><br>
+                        <span style="color:#888;">{{ row.priority }}</span>
+                    </td>
+                    <td>
+                        <div><strong>{{ row.method }}</strong> {{ s.path }}</div>
+                        <div style="color:#888;">{{ row.case_name }} / {{ row.ctime }}</div>
+                        <div style="color:#666;">{{ s.reason }}</div>
+                    </td>
+                    <td>{{ s.statuses }}</td>
+                    <td>
+                        <span class="layui-badge layui-bg-blue">{{ s.triage }}</span>
+                        <div style="margin-top:6px;">fix: <span class="layui-badge layui-bg-orange">{{ s.fix_status }}</span></div>
+                        {% if s.manual.triage %}
+                            <div style="margin-top:6px;color:#333;">manual: {{ s.manual.triage }}</div>
+                            <div style="color:#888;">{{ s.manual.note }}</div>
+                        {% endif %}
+                        {% if row.related_vuln_id %}
+                            <div style="margin-top:6px;color:#009688;">已转漏洞</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('web.security_results_web') }}?page={{ page }}&size={{ size }}"
+                              method="POST" class="layui-form">
+                            <input type="hidden" name="action" value="single_review">
+                            <input type="hidden" name="result_id" value="{{ row.id }}">
+                            <input type="hidden" name="filter_check_type" value="{{ form.check_type }}">
+                            <input type="hidden" name="filter_verdict" value="{{ form.verdict }}">
+                            <input type="hidden" name="filter_triage" value="{{ form.triage }}">
+                            <input type="hidden" name="filter_pathid" value="{{ form.pathid }}">
+                            <input type="hidden" name="filter_priority" value="{{ form.priority }}">
+                            <input type="hidden" name="filter_fix_status" value="{{ form.fix_status }}">
+                            <input type="hidden" name="filter_code_queue" value="{{ form.code_queue }}">
+                            <input type="hidden" name="filter_include_processed" value="{{ form.include_processed }}">
+                            <input type="hidden" name="filter_include_duplicates" value="{{ form.include_duplicates }}">
+                            <input type="hidden" name="filter_page" value="{{ page }}">
+                            <input type="hidden" name="filter_size" value="{{ size }}">
+                            <div class="layui-input-inline" style="width:150px;">
+                                <select name="manual_triage">
+                                    <option value="">manual triage</option>
+                                    {% for v in ['public_data','account_isolated','retest_needed','potential_issue','false_positive'] %}
+                                        <option value="{{ v }}" {% if s.manual.triage == v %}selected{% endif %}>{{ v }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="layui-input-inline" style="width:110px;">
+                                <select name="manual_status">
+                                    <option value="">status</option>
+                                    {% for v in ['open','done','watch','ignore'] %}
+                                        <option value="{{ v }}" {% if s.manual.status == v %}selected{% endif %}>{{ v }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="layui-input-inline" style="width:170px;">
+                                <select name="fix_status">
+                                    <option value="">fix status</option>
+                                    {% for v in ['pending_confirm','pending_review','fixing','fixed_pending_verify','verified_fixed','false_positive','accepted_risk'] %}
+                                        <option value="{{ v }}" {% if s.fix_status == v %}selected{% endif %}>{{ v }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="layui-input-inline" style="width:150px;">
+                                <select name="retest_status">
+                                    <option value="">retest</option>
+                                    {% for v in ['not_started','reproduced','not_reproduced','inconsistent','blocked'] %}
+                                        <option value="{{ v }}" {% if s.retest_status == v %}selected{% endif %}>{{ v }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div style="margin-top:6px;">
+                                <input type="text" name="owner" value="{{ s.owner }}" placeholder="负责人"
+                                       class="layui-input" style="width:110px;display:inline-block;">
+                                <input type="text" name="fix_version" value="{{ s.fix_version }}" placeholder="修复版本"
+                                       class="layui-input" style="width:120px;display:inline-block;">
+                                <input type="text" name="manual_note" value="{{ s.manual.note }}" placeholder="确认备注"
+                                       class="layui-input" style="width:220px;display:inline-block;">
+                            </div>
+                            <div style="margin-top:6px;">
+                                <input type="text" name="verify_note" value="{{ s.verify_note }}" placeholder="修复验证备注"
+                                       class="layui-input" style="width:330px;display:inline-block;">
+                                <input type="text" name="retest_note" value="{{ s.retest_note }}" placeholder="retest note: request direction and actual result"
+                                       class="layui-input" style="width:330px;display:inline-block;">
+                                <button class="layui-btn layui-btn-sm" type="submit" name="action" value="single_review">Save</button>
+                                <button class="layui-btn layui-btn-warm layui-btn-sm" type="submit" name="action" value="promote_vuln">转漏洞</button>
+                            </div>
+                            {% if s.evidence_ref %}
+                                <div style="margin-top:6px;color:#888;">evidence_ref: {{ s.evidence_ref }}</div>
+                            {% endif %}
+                        </form>
+                        {% if s.replay_steps %}
+                            <details style="margin-top:8px;" open>
+                                <summary>复验请求 / Copy Requests</summary>
+                                <div style="margin-top:8px;color:#666;">
+                                    Authorization/Cookie are placeholders. Replace them with the current browser or Burp login state before replay.
+                                </div>
+                                {% for step in s.replay_steps %}
+                                    <div style="border:1px solid #e6e6e6;margin-top:8px;padding:8px;">
+                                        <div>
+                                            <strong>{{ step.label }}</strong>
+                                            {% if step.actor %}<span class="layui-badge layui-bg-cyan">{{ step.actor }}</span>{% endif %}
+                                            <span class="layui-badge">{{ step.method }}</span>
+                                            status={{ step.status }}
+                                            {% if step.contains is not none %} contains={{ step.contains }}{% endif %}
+                                            {% if step.skipped %} skipped={{ step.skipped }}{% endif %}
+                                        </div>
+                                        <div style="word-break:break-all;color:#555;margin-top:4px;">{{ step.url }}</div>
+                                        {% if step.body %}
+                                            <details style="margin-top:6px;">
+                                                <summary>request body</summary>
+                                                <pre style="white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;">{{ step.body }}</pre>
+                                            </details>
+                                        {% endif %}
+                                        <textarea id="curl_{{ row.id }}_{{ loop.index }}" readonly
+                                                  class="layui-textarea"
+                                                  style="margin-top:6px;font-family:Consolas,monospace;height:130px;">{{ step.curl }}</textarea>
+                                        <button class="layui-btn layui-btn-primary layui-btn-xs" type="button"
+                                                onclick="copy_text('curl_{{ row.id }}_{{ loop.index }}')">Copy curl</button>
+                                        <details style="margin-top:6px;">
+                                            <summary>response sample</summary>
+                                            <pre style="white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;">{{ step.response }}</pre>
+                                        </details>
+                                    </div>
+                                {% endfor %}
+                            </details>
+                        {% endif %}
+                        <details style="margin-top:8px;">
+                            <summary>Evidence</summary>
+                            <pre style="white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;">{{ row.evidence_summary | json_show }}</pre>
+                        </details>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <xblock>
+            <span class="x-right" style="line-height:40px">Total: {{ count }}</span>
+        </xblock>
+
+        <div class="page">
+            <div>
+                {% if hit.per_page %}
+                    <span onclick="page_flush('{{ hit.per_page }}', '{{ size }}')" style="cursor:pointer"
+                          class="prev">&lt;&lt;</span>
+                {% endif %}
+                {% for p in hit.dic %}
+                    <span onclick="page_flush('{{ p }}', '{{ size }}')"
+                          {% if p == page %} class="current" {% else %} class="num" {% endif %}
+                          style="cursor:pointer">{{ p }}</span>
+                {% endfor %}
+                {% if hit.next_page %}
+                    <span onclick="page_flush('{{ hit.next_page }}', '{{ size }}')" class="next"
+                          style="cursor:pointer">&gt;&gt;</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function page_flush(page, size) {
+            let url = $("#url").val() + "?page=" + page + "&size=" + size;
+            $("#p_form")[0].action = url;
+            $("#p_form").submit();
+        }
+        function toggle_all_results(checked) {
+            $(".result-pick").prop("checked", checked);
+        }
+        function copy_text(id) {
+            const el = document.getElementById(id);
+            if (!el) {
+                return;
+            }
+            el.select();
+            el.setSelectionRange(0, 999999);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(el.value);
+            } else {
+                document.execCommand("copy");
+            }
+        }
+    </script>
+{% endblock %}

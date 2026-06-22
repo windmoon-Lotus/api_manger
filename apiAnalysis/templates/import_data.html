@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block head %}
+    <!--[if lt IE 9]>
+<script src="{{ url_for('static', filename='lib/html5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='lib/respond.min.js') }}"></script>
+<![endif]-->
+{% endblock %}
+
+{% block body %}
+    <div class="x-body">
+        <blockquote class="layui-elem-quote">
+            {{ t('import_title') }}: {{ t('import_intro') }}
+            <br>
+            {{ t('import_account_tip') }}
+            <a href="javascript:;" onclick="x_admin_show('{{ t('nav_accounts') }}','{{ url_for('web.sso_account') }}')">{{ t('nav_accounts') }}</a>
+        </blockquote>
+
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md4"><div class="layui-card"><div class="layui-card-header">{{ t('import_stats_api') }}</div><div class="layui-card-body">{{ stats.raw_count }}</div></div></div>
+            <div class="layui-col-md4"><div class="layui-card"><div class="layui-card-header">{{ t('import_stats_rel') }}</div><div class="layui-card-body">{{ stats.relation_count }}</div></div></div>
+            <div class="layui-col-md4"><div class="layui-card"><div class="layui-card-header">{{ t('import_stats_task') }}</div><div class="layui-card-body">{{ stats.task_init_count }}</div></div></div>
+        </div>
+
+        {% if result %}
+            <div style="margin-top: 12px;">
+                {% if result_level == 'success' %}
+                    <div class="layui-bg-green" style="padding: 10px 14px;">{{ result }}</div>
+                {% elif result_level == 'warning' %}
+                    <div class="layui-bg-orange" style="padding: 10px 14px;">{{ result }}</div>
+                {% else %}
+                    <div class="layui-bg-red" style="padding: 10px 14px;">{{ result }}</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <fieldset class="layui-elem-field" style="margin-top: 16px;">
+            <legend>{{ t('import_upload_title') }}</legend>
+            <div class="layui-field-box">
+                <form action="{{ url_for('web.import_data') }}" method="POST" enctype="multipart/form-data" class="layui-form">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">{{ t('import_fmt') }}</label>
+                        <div class="layui-input-inline">
+                            <select name="format">
+                                <option value="">{{ t('import_select') }}</option>
+                                <option value="har" {% if form.format == 'har' %}selected{% endif %}>{{ t('import_fmt_har') }}</option>
+                                <option value="openapi" {% if form.format == 'openapi' %}selected{% endif %}>{{ t('import_fmt_openapi') }}</option>
+                                <option value="postman" {% if form.format == 'postman' %}selected{% endif %}>{{ t('import_fmt_postman') }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">{{ t('import_file') }}</label>
+                        <div class="layui-input-inline" style="width: 420px;">
+                            <input type="file" name="source_file" class="layui-input" accept=".har,.json,.txt">
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">{{ t('import_auto') }}</label>
+                        <div class="layui-input-block">
+                            <input type="checkbox" name="run_param" title="{{ t('import_auto_param') }}" {% if form.run_param == 'on' %}checked{% endif %}>
+                            <input type="checkbox" name="prepare_tasks" title="{{ t('import_auto_task') }}" {% if form.prepare_tasks == 'on' %}checked{% endif %}>
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">{{ t('import_bind') }}</label>
+                        <div class="layui-input-inline" style="width: 320px;">
+                            <select name="account_select">
+                                <option value="">{{ t('import_bind_default') }}</option>
+                                {% for a in accounts %}
+                                    {% set aid = a.id|string %}
+                                    <option value="{{ aid }}" {% if form.account_select == aid or form.account_id == aid %}selected{% endif %}>
+                                        {{ a.username }}{% if a.describe %} ({{ a.describe }}){% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="layui-form-mid layui-word-aux">{{ t('import_bind_tip') }}</div>
+                    </div>
+
+                    <div class="layui-form-item">
+                        <div class="layui-input-block">
+                            <button class="layui-btn" type="submit">{{ t('import_btn') }}</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </fieldset>
+
+        <div class="layui-card" style="margin-top: 10px;">
+            <div class="layui-card-header">{{ t('import_guide_title') }}</div>
+            <div class="layui-card-body">
+                <p>1. {{ t('import_guide_1') }}</p>
+                <p>2. {{ t('import_guide_2') }}</p>
+                <p>3. {{ t('import_guide_3') }}</p>
+                <p>4. {{ t('import_guide_4') }}</p>
+            </div>
+        </div>
+    </div>
+{% endblock %}

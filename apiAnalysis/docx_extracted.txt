@@ -1,0 +1,57 @@
+Api安全系统设计相关文档
+理念
+AI辅助漏洞和接口测试，AI调用脚本和存储数据发起接口请求，并判断是否存在异常。如存在则提供openapi文档，如果不存在可通过API网关或浏览器测试导出流量并进行测试，建议最好有api文档，弥补实际测试中抓取流量可能的参数不全问题。需求可以
+前提
+为达到上述功能目的，因此我考虑将API按功能划分，增删改查，上传下载，鉴权等这个应该具有扩展性，识别规则和执行规则都可方便整理。工具可以调用AI根据流量和API文档识别接口作用，难以识别的可标注由开发判断。
+同时为了方便对于参数漏洞的识别，初步打算根据请求和响应参数值对参数是否相同做判断，同时需要记录参数所在请求中的对应位置，分析结果可根据参数 获取对应的请求和响应API路径，但因为需要记录参数位置，所以有纯请求响应参数分析表，在根据此表对于参数共性进行分析，目前这个分析规则是相对头疼的，初步写了下。然后对应的参数问题其实也可以他们人工排查，但其实规则验证效果应该是相当可观的，仅需注意万能参数即可。
+有了以上数据在存在一个请求组合表，将参数组成请求包就自然而然了，因为有人工因素，有个是否人工检测好的字段就不足为奇了。
+实现
+写了一堆其实实现层面反而是比较简单的，解析har流量将数据转换入表【可参考mitmproxy2swagger项目】，同理也可以使用中间人获取流量存入表中，需要个前端展示和修改接口属性，以及部分归类错误接口，如果有完善的包含用例的postman文档也可直接解析文档形成数据信息，根据规则验证推断对应接口参数属性，如有验证需要实现通用登录接口，功能实现也可参考secscan-Authcheck。
+Todo
+对于记录值加入账号功能，分析前提是需要同账号的
+API版本和漏洞管理
+集成漏扫规则框架，添加越权等部分常见业务逻辑漏洞规则
+添加功能测试用例自动生成规则
+属性定义
+Path：接口路径，包含增删改查验证上传下载等具体行为。
+Path {action:"C_Path|D_path|Q_Path|M_Path|Auth_Path|Download_Path|Upload-Path|...."}
+Res：响应体
+Res {Media Type:{application/json, text/html}}
+Req：请求体
+Req {bytes(file,exe,zip,,,,),json,text,xml,""....}
+ResP：参数化响应体
+ReqP：参数化请求体，Priority：参数优先级
+ResPV：响应参数值
+ReqPV：请求参数值
+ResP {}
+ReqP:{position:"body|query|header|path",relation:"primary|secondary|....|any"}
+ResPV
+ReqPV：{}
+Priority:"int"
+数据表：请求参数列表；响应参数列表；路径表；流量表；分析结果表（参数路径统一表）
+路径表字段：
+domain;path;query;methon;pathid;action;rule(query or path) ;des;tags;heades;modificator
+请求参数列表字段：
+Content-type;parameter;Priority;value;required;type;des;modificator;Path
+响应参数列表字段：
+Content-type;parameter;value;type;des;modificator;Path
+流量表：
+略
+参数分析结果表：
+Parameter；reqpathid；respathid；value; modificator
+请求组合表：
+Pathid；Parameter；Content-type; modificator
+前提：分析的数据须在同一角色权限下
+规则：
+任意请求参数等于且请求参数值集合和响应参数集合存在交集，若请求、响应路径不同则推出该参数的请求路径和响应路径存在弱相关。
+∀ ReqP1==ResP2 ∧ ReqP1V[]∩ResP2V[] != ∅  ReqP1.Path1 != ResP2.Path2 ==>Path1，Path2存在弱相关
+如果路径下参数相等且参数值交集为空，则参数不相等。若存在交集则初步相等
+if ReqP1==ReqP2 ∧ ReqP1V[] ∩ ReqP1V[]=∅ ==》ReqP1! = ReqP2
+如果两个路径下参数不等且参数值为并集，则参数初步相等。
+特殊参数：动态参数不在考虑中。
+增删接口，建议先人工标注
+校验
+swap(Path2.req(Path1.ReqP1V[]),Path1.req(Path2.ReqP1V[]));Path2.req(Path1.ReqP1V[]).res∩Path1.req(Path2.ReqP1V[]).res!=erron Path2.ReqP1=Path1.ReqP1
+优化规则
+路径类似先粗略归为一个模块
+openapi同模块参数优先相同
