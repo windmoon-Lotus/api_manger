@@ -194,7 +194,7 @@ __all__ = [
 ]
 
 if __name__ == '__main__':
-    url = 'http://www.zto.com/adbss/dfds/ddsd?a=1&b=2&c=3&r=021211012230'
+    url = 'https://api.example.test/orders/demo?a=1&b=2&c=3&r=example-order'
     path, raw_params, params = parse_url_params(url)
     print(path)
     print(raw_params)

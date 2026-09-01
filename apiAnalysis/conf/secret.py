@@ -1,4 +1,5 @@
 import os
+import secrets
 
 
 def _env(name, default=None):
@@ -24,8 +25,12 @@ def _env_bytes(name, default):
         return default
     return value.encode("utf-8")
 
-# flask app
-secret_key = _env_bytes("API_MANAGER_SECRET_KEY", b'\x00\x01\x02\x03\x04\x05')
+# flask app. Without an explicit key, use an ephemeral process-local key rather
+# than a repository-wide constant. Set API_MANAGER_SECRET_KEY to keep sessions
+# valid across restarts.
+_configured_secret_key = _env_bytes("API_MANAGER_SECRET_KEY", None)
+secret_key_is_ephemeral = _configured_secret_key is None
+secret_key = _configured_secret_key or secrets.token_bytes(32)
 
 # mongodb
 mongo_database = _env("API_MANAGER_MONGO_DATABASE", "apihandl")

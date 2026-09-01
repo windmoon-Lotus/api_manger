@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="x-body">
+    <div class="layui-row" style="margin-bottom:15px;">
+        <div class="layui-col-xs12">
+            <span class="layui-breadcrumb"><a href="">项目</a><a><cite>项目列表</cite></a></span>
+        </div>
+    </div>
+
+    <div class="layui-row layui-col-space15">
+        {% for card in project_cards %}
+        <div class="layui-col-md4">
+            <div class="layui-card">
+                <div class="layui-card-header">
+                    <strong>{{ card.project.name }}</strong>
+                    {% if card.project.status == 'active' %}
+                        <span class="layui-badge layui-bg-green" style="float:right;margin-top:8px;">active</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-gray" style="float:right;margin-top:8px;">{{ card.project.status }}</span>
+                    {% endif %}
+                </div>
+                <div class="layui-card-body">
+                    <p style="color:#666;font-size:12px;margin-bottom:10px;">{{ card.project.description or '暂无描述' }}</p>
+                    <div class="layui-row layui-col-space5" style="text-align:center;">
+                        <div class="layui-col-xs3">
+                            <div style="font-size:20px;font-weight:bold;color:#1E9FFF;">{{ card.env_count }}</div>
+                            <small>环境</small>
+                        </div>
+                        <div class="layui-col-xs3">
+                            <div style="font-size:20px;font-weight:bold;color:#1E9FFF;">{{ card.asset_count }}</div>
+                            <small>接口</small>
+                        </div>
+                        <div class="layui-col-xs3">
+                            <div style="font-size:20px;font-weight:bold;color:#FFB800;">{{ card.run_count }}</div>
+                            <small>执行</small>
+                        </div>
+                        <div class="layui-col-xs3">
+                            <div style="font-size:20px;font-weight:bold;color:{% if card.finding_count > 0 %}#FF5722{% else %}#999{% endif %};">{{ card.finding_count }}</div>
+                            <small>漏洞</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="layui-card-body" style="border-top:1px solid #f0f0f0;padding-top:10px;">
+                    <a href="{{ url_for('web.project_overview', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs">概览</a>
+                    <a href="{{ url_for('web.project_assets', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs layui-btn-normal">接口</a>
+                    <a href="{{ url_for('web.project_knowledge_parameters', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs layui-btn-normal">知识</a>
+                    <a href="{{ url_for('web.project_tests', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs layui-btn-warm">测试</a>
+                    <a href="{{ url_for('web.project_runs', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs">执行</a>
+                    <a href="{{ url_for('web.project_findings', project_id=card.project.project_id) }}" class="layui-btn layui-btn-xs layui-btn-danger">漏洞</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not project_cards %}
+        <div class="layui-col-xs12" style="text-align:center;color:#999;padding:40px;">
+            暂无活跃项目。请在数据源中心导入数据并创建项目。
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

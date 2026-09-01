@@ -1,112 +1,236 @@
 {% extends "layout.html" %}
 
-{% block head %}
-    <!--[if lt IE 9]>
-<script src="{{ url_for('static', filename='lib/html5.min.js') }}"></script>
-<script src="{{ url_for('static', filename='lib/respond.min.js') }}"></script>
-<![endif]-->
-{% endblock %}
+{% macro endpoint_inspector(detail, role) %}
+<details class="endpoint-inspector">
+    <summary><span class="role-chip">{{ role }}</span><span class="method {{ detail.method }}">{{ detail.method or '-' }}</span><strong>{{ detail.path or '未找到接口' }}</strong> {% if detail.source_label %}<span class="badge info">{{ detail.source_label }}</span>{% endif %}{% if detail.sample_count %}<span class="badge good">样本 {{ detail.sample_count }}</span>{% endif %}</summary>
+    {% if detail %}
+    <div class="endpoint-inspector__body">
+        <div class="endpoint-meta"><span class="badge">接口 {{ detail.pathid }}</span>{% if detail.domain %}<span class="badge">{{ detail.domain }}</span>{% endif %}{% for code in detail.response_status_codes %}<span class="badge">HTTP {{ code }}</span>{% endfor %}</div>
+        <div><strong>{{ detail.name or '未命名接口' }}</strong></div><div class="muted">{{ detail.description or '接口文档未提供说明' }}</div>
+        <div class="schema-grid">
+            <div><div class="section-title">请求参数 {{ detail.request_parameter_count }}</div><table class="schema-table"><thead><tr><th>位置</th><th>字段 / 类型</th><th>说明</th></tr></thead><tbody>{% for field in detail.request_parameters %}<tr class="{% if field.highlight %}highlight{% endif %}"><td>{{ field.position }}{% if field.required %} · 必填{% endif %}</td><td><code>{{ field.display_path }}</code><br><span class="muted">{{ field.type }}</span></td><td>{{ field.description or '-' }}{% if field.examples %}<div class="muted">示例 {{ field.examples }}</div>{% endif %}</td></tr>{% else %}<tr><td colspan="3" class="muted">无结构化请求字段</td></tr>{% endfor %}</tbody></table></div>
+            <div><div class="section-title">响应字段 {{ detail.response_parameter_count }}</div><table class="schema-table"><thead><tr><th>位置</th><th>字段 / 类型</th><th>说明</th></tr></thead><tbody>{% for field in detail.response_parameters %}<tr class="{% if field.highlight %}highlight{% endif %}"><td>{{ field.position }}</td><td><code>{{ field.display_path }}</code><br><span class="muted">{{ field.type }}</span></td><td>{{ field.description or '-' }}{% if field.examples %}<div class="muted">示例 {{ field.examples }}</div>{% endif %}</td></tr>{% else %}<tr><td colspan="3" class="muted">无结构化响应字段</td></tr>{% endfor %}</tbody></table></div>
+        </div>
+        {% for sample in detail.samples %}
+        <details class="sample">
+            <summary><span class="badge info">{{ sample.source_label }}</span> {{ sample.method }} {{ sample.url or detail.path }} {% if sample.status_code %}<span class="badge {% if sample.status_code < 400 %}good{% else %}bad{% endif %}">HTTP {{ sample.status_code }}</span>{% endif %} <span class="muted">命中 {{ sample.hit_count }} 次 · {{ sample.captured_at }}</span></summary>
+            <div class="sample-grid"><div><strong>Query</strong><pre>{{ sample.query_pretty or '{}' }}</pre></div><div><strong>Header（认证值已脱敏）</strong><pre>{{ sample.headers_pretty or '{}' }}</pre></div><div><strong>Request body</strong><pre>{{ sample.body_pretty or '无请求体' }}</pre></div><div><strong>Response sample</strong><pre>{{ sample.response_pretty or '未保存响应样本' }}</pre></div></div>
+        </details>
+        {% else %}<div class="muted" style="margin-top:9px;">当前只有文档结构，没有可展示的流量样本。</div>{% endfor %}
+    </div>
+    {% endif %}
+</details>
+{% endmacro %}
+
+{% macro request_composition(attempt) %}
+{% if attempt.request_method %}
+<div class="muted" style="margin-top:4px">
+    实发 {{ attempt.request_method }} {{ attempt.request_origin }}{{ attempt.request_path }}
+    · Query 名称：{{ attempt.request_query_names|join('、') if attempt.request_query_names else '-' }}
+    · Header 名称：{{ attempt.request_header_names|join('、') if attempt.request_header_names else '-' }}
+    · Cookie 名称：{{ attempt.request_cookie_names|join('、') if attempt.request_cookie_names else '-' }}
+    · Body {{ attempt.request_body_bytes }} B{% if attempt.request_content_type %}（{{ attempt.request_content_type }}）{% endif %}
+    · TLS 校验{% if attempt.request_tls_verify %}开启{% else %}关闭{% endif %}
+    · 跳转{% if attempt.request_allow_redirects %}允许{% else %}禁止{% endif %}
+    {% if attempt.request_timeout_seconds is not none %}· 超时 {{ attempt.request_timeout_seconds }} s{% endif %}
+    · 认证前置请求 {{ attempt.auth_request_count }} 次
+    {% if attempt.request_auth_header_names or attempt.request_auth_cookie_names %}
+    <br>认证仅注入名称：Header {{ attempt.request_auth_header_names|join('、') if attempt.request_auth_header_names else '-' }}；
+    Cookie {{ attempt.request_auth_cookie_names|join('、') if attempt.request_auth_cookie_names else '-' }}
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
 
 {% block body %}
-    <div class="x-body">
-        <div class="layui-row">
-            <form id="p_form" action="{{ url_for('web.parameter_relations') }}" method="GET"
-                  class="layui-form layui-col-space5">
-                <input id="url" type="hidden" value="{{ url_for('web.parameter_relations') }}">
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" value="{{ form.parameter }}" name="parameter" placeholder="parameter"
-                           autocomplete="off" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" value="{{ form.relation }}" name="relation" placeholder="relation"
-                           autocomplete="off" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <select name="verified">
-                        <option value="">verified</option>
-                        <option value="true" {% if form.verified == 'true' %}selected{% endif %}>true</option>
-                        <option value="false" {% if form.verified == 'false' %}selected{% endif %}>false</option>
-                    </select>
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <button class="layui-btn" lay-submit="" lay-filter="sreach">
-                        <i class="layui-icon">&#xe615;</i></button>
-                </div>
+<div class="x-body relation-page">
+    <style>
+        .relation-page { color:#172033; background:#f5f7fa; min-height:100%; }
+        .panel,.relation-card { background:#fff; border:1px solid #dfe4ea; margin-bottom:12px; }
+        .panel { padding:14px 16px; }
+        .hero h1 { margin:0 0 5px; font-size:20px; font-weight:650; }
+        .hero-head,.card-head,.toolbar,.pager { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+        .toolbar { justify-content:flex-start; flex-wrap:wrap; }
+        .muted { color:#667085; line-height:1.6; }
+        .metrics { display:grid; grid-template-columns:repeat(8,minmax(100px,1fr)); gap:8px; margin-top:12px; }
+        .metric { border:1px solid #e4e7ec; background:#f8fafc; padding:8px 10px; }.metric span{display:block;color:#667085}.metric strong{display:block;font-size:19px;color:#101828}
+        .action-guide { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .guide-card { border:1px solid #dfe4ea; background:#fcfcfd; padding:11px 12px; line-height:1.6; }.guide-card strong{display:block;color:#101828;font-size:15px;margin-bottom:3px}.guide-card .number{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;background:#009688;color:#fff;margin-right:7px}
+        .batch-form { display:grid;grid-template-columns:minmax(230px,1fr) 150px minmax(220px,1fr) minmax(250px,1fr) auto;gap:10px;align-items:end }.batch-form label{display:block;color:#475467;margin-bottom:4px}.batch-options label{display:block;margin:4px 0;color:#344054}.progress-track{height:10px;background:#e4e7ec;overflow:hidden;margin-top:9px}.progress-track span{display:block;height:100%;background:#2e90fa}.analysis-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+        .run-panel { border-left:4px solid #f79009; }.run-panel.good{border-left-color:#12b76a}.run-panel.info{border-left-color:#2e90fa}.run-panel.bad{border:2px solid #f04438;border-left-width:6px;background:#fff4f3}
+        .run-head { display:flex;justify-content:space-between;gap:12px;align-items:flex-start }.run-title{font-size:17px;font-weight:650;color:#101828}.run-route{margin-top:6px;color:#344054;word-break:break-all}.run-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+        .run-steps { display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px }.run-step{position:relative;border:1px solid #e4e7ec;background:#f8fafc;padding:9px 10px;min-height:67px}.run-step strong{display:block;color:#344054;margin-bottom:3px}.run-step.done{border-color:#98d7bd;background:#ecfdf3}.run-step.current{border-color:#84caff;background:#eff8ff}.run-step.error{border-color:#f7a8a8;background:#fff1f3}.run-step.pending{color:#98a2b3}.run-step .step-index{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:50%;background:#d0d5dd;color:#344054;margin-right:5px}.run-step.done .step-index{background:#12b76a;color:#fff}.run-step.current .step-index{background:#2e90fa;color:#fff}.run-step.error .step-index{background:#f04438;color:#fff}
+        .run-output { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px dashed #d0d5dd }.run-attempt{border:1px solid #d0d5dd;background:#fff;padding:6px 8px}.run-attempt.good{border-color:#98d7bd}.run-attempt.bad{border-color:#f7a8a8}
+        .context-grid { display:grid; grid-template-columns:1.4fr repeat(5,minmax(125px,1fr)) auto; gap:8px; align-items:end; }
+        .context-grid label,.host-grid label,.fixture-grid label,.manual-grid label { display:block; color:#475467; margin-bottom:3px; }
+        .context-state { margin-top:10px; border:1px solid #ffd18a; background:#fffaeb; color:#b54708; padding:8px 10px; }.context-state.ready{border-color:#98d7bd;background:#ecfdf3;color:#027a48}
+        .queue { display:flex; flex-wrap:wrap; gap:7px; }.queue a{border:1px solid #d0d5dd;background:#f8fafc;color:#344054;padding:6px 10px}.queue a.active{border-color:#009688;background:#eaf7f5;color:#006d63;font-weight:600}
+        .relation-card { overflow:hidden; }.card-head{padding:12px 14px;background:#fcfcfd;border-bottom:1px solid #e4e7ec;align-items:flex-start}.pair-title{font-size:17px;font-weight:650;color:#101828}
+        .badge { display:inline-block; padding:2px 7px; border:1px solid #d0d5dd; background:#f8fafc; color:#344054; margin:2px 4px 2px 0; line-height:20px; }.badge.good{border-color:#98d7bd;background:#ecfdf3;color:#027a48}.badge.warn{border-color:#ffd18a;background:#fffaeb;color:#b54708}.badge.bad{border-color:#f7a8a8;background:#fff1f3;color:#b42318}.badge.info{border-color:#84caff;background:#eff8ff;color:#175cd3}
+        .flow { display:grid; grid-template-columns:minmax(0,1fr) 160px minmax(0,1fr); gap:10px; align-items:stretch; padding:13px 14px 8px; }
+        .endpoint-card { border:1px solid #dfe4ea; padding:11px 12px; background:#fff; }.endpoint-card .role{color:#006d63;font-weight:650;margin-bottom:6px}.endpoint-path{font-size:14px;color:#101828;word-break:break-all}.endpoint-path strong{margin-right:6px}
+        .flow-center { display:flex; flex-direction:column; justify-content:center; text-align:center; color:#475467; }.arrow{font-size:25px;color:#009688;line-height:1}.flow-center strong{color:#101828}
+        .mapping-wrap { padding:4px 14px 13px; }.mapping-table{width:100%;border-collapse:collapse}.mapping-table th,.mapping-table td{border:1px solid #e4e7ec;padding:7px 9px;text-align:left;vertical-align:top}.mapping-table th{background:#f8fafc;color:#475467}.mapping-table code{color:#075985}
+        .conclusion { margin:0 14px 12px; border:1px solid #86c7bd; background:#f0fdfa; padding:9px 11px; }.conclusion.warn{border-color:#ffd18a;background:#fffaeb}.conclusion.bad{border-color:#f7a8a8;background:#fff1f3}.conclusion strong{margin-right:8px}
+        .drawer { border-top:1px solid #e4e7ec; margin:0; }.drawer>summary{cursor:pointer;padding:11px 14px;background:#fcfcfd;color:#006d63;font-weight:600}.drawer[open]>summary{border-bottom:1px solid #e4e7ec}.drawer-body{padding:12px 14px}
+        .endpoint-inspector { border:1px solid #dfe4ea; margin-bottom:9px; }.endpoint-inspector>summary{cursor:pointer;padding:10px 11px;background:#f8fafc}.endpoint-inspector__body{padding:11px}.role-chip{display:inline-block;color:#006d63;font-weight:650;min-width:42px}.method{display:inline-block;min-width:48px;text-align:center;color:#fff;background:#475467;padding:2px 6px;margin-right:7px}.method.GET{background:#1677ff}.method.POST{background:#12a150}.method.PUT,.method.PATCH{background:#d97706}.method.DELETE{background:#d92d20}
+        .endpoint-meta { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px }.schema-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.schema-table{width:100%;border-collapse:collapse;font-size:12px}.schema-table th,.schema-table td{border:1px solid #e4e7ec;padding:6px;text-align:left;vertical-align:top}.schema-table th{background:#f8fafc}.schema-table tr.highlight td{background:#ecfdf3}.section-title{color:#344054;font-weight:600;margin-bottom:6px}
+        .sample { border:1px solid #e4e7ec; margin-top:9px; }.sample>summary{cursor:pointer;padding:8px 9px;background:#f8fafc}.sample-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:9px}pre{white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;background:#0f172a;color:#e2e8f0;padding:8px;margin:4px 0 0;font-size:12px}
+        .evidence-item,.input-row { padding:7px 0;border-top:1px dashed #e4e7ec }.evidence-item:first-child,.input-row:first-child{border-top:0}.evidence-item strong{display:block}.latest,.input-readiness{border:1px solid #d0d5dd;background:#f8fafc;padding:8px 9px;line-height:1.6;margin-top:8px}.attempt{margin-top:5px;padding:5px 7px;border-left:3px solid #d0d5dd;background:#fff}.attempt.good{border-color:#12b76a}.attempt.warn{border-color:#f79009}.attempt.bad{border-color:#f04438}
+        .fixture-editor{border:1px solid #d0d5dd;margin-top:9px;padding:8px 9px}.fixture-editor>summary{cursor:pointer;font-weight:600}.fixture-form{margin-top:9px;padding-top:9px;border-top:1px solid #e4e7ec}.fixture-grid,.host-grid,.manual-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.fixture-grid .wide,.host-grid .wide,.manual-grid .wide{grid-column:1 / -1}.fixture-grid textarea{min-height:72px;font-family:Consolas,monospace;font-size:12px}.danger-note{border:1px solid #f7a8a8;background:#fff1f3;color:#b42318;padding:7px 9px;margin-top:8px}
+        @media(max-width:1280px){.context-grid{grid-template-columns:repeat(3,1fr)}.metrics{grid-template-columns:repeat(3,1fr)}}
+        @media(max-width:820px){.hero-head,.card-head,.pager,.run-head{display:block}.context-grid,.metrics,.flow,.schema-grid,.sample-grid,.fixture-grid,.host-grid,.manual-grid,.action-guide,.run-steps,.batch-form{grid-template-columns:1fr}.flow-center{padding:5px}.fixture-grid .wide,.host-grid .wide,.manual-grid .wide{grid-column:auto}}
+    </style>
+
+    {% set knowledge_nav_active = 'relations' %}
+    {% include '_knowledge-nav.html' %}
+    {% if saved %}<div class="panel layui-elem-quote layui-quote-nm">{{ saved }}</div>{% endif %}
+
+    <section class="panel hero">
+        <div class="hero-head"><div><h1>关系验证</h1><div class="muted">先在本地资料中发现候选，再用少量真实请求验证。一个接口对只建立一个请求案例，多个字段共用请求，不会按字段重复调用接口。</div></div><div class="toolbar">
+            {% if can_manage %}<form method="POST" action="{{ url_for('web.parameter_relations') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="preprocess_project"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><button class="layui-btn layui-btn-primary" type="submit" title="后台扫描全部接口文档、流量样本和已有结论，不访问业务接口" {% if stats.analysis_active %}disabled{% endif %}>{% if stats.analysis_active %}全量分析进行中{% else %}后台全量发现并分析（不发请求）{% endif %}</button></form>
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="auto_next"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><button class="layui-btn" type="submit" {% if not validation_context.ready or stats.active_batches or stats.validation_blocked %}disabled{% endif %}>{% if stats.validation_blocked %}先修复测试账号认证{% else %}验证下一接口对（≤{{ 3 if execution_policy.auto_request_limit > 3 else execution_policy.auto_request_limit }} 请求）{% endif %}</button></form>{% endif %}
+        </div></div>
+        <div class="metrics"><div class="metric"><span>候选接口对</span><strong>{{ stats.pairs }}</strong></div><div class="metric"><span>字段映射</span><strong>{{ stats.total }}</strong></div><div class="metric"><span>可批量验证接口对</span><strong>{{ stats.ready_pairs }}</strong></div><div class="metric"><span>后台请求批次</span><strong>{{ stats.active_batches }}</strong></div><div class="metric"><span>批次涉及字段</span><strong>{{ stats.running }}</strong></div><div class="metric"><span>已验证字段</span><strong>{{ stats.verified }}</strong></div><div class="metric"><span>结构变化待复验</span><strong>{{ stats.stale }}</strong></div><div class="metric"><span>需人工纠偏</span><strong>{{ stats.human_correction }}</strong></div></div>
+    </section>
+
+    <section class="panel action-guide">
+        <div class="guide-card"><strong><span class="number">1</span>后台全量发现与分析</strong><div class="muted">扫描全部 Apifox / OpenAPI、已有真实流量和人工结论；持久化进度，页面关闭或服务重启后可以恢复。它只改变候选知识，不访问业务系统。</div></div>
+        <div class="guide-card"><strong><span class="number">2</span>验证下一接口对（真实请求）</strong><div class="muted">选择置信度最高且已就绪的一个接口对：请求来源接口一次，提取多个字段并一次性注入消费请求，必要时重试 Host 或回读效果；总计不超过按钮标注的请求数，随后逐字段回写结论。</div></div>
+        <div class="guide-card"><strong><span class="number">3</span>按总预算批量验证</strong><div class="muted">把多个已就绪接口对放入一个后台批次。默认只执行 GET/HEAD/OPTIONS；写入和删除必须单独勾选，总请求硬上限在创建前确定。</div></div>
+    </section>
+
+    {% if analysis_run %}
+    <section class="panel run-panel {{ analysis_run.tone }}" aria-live="polite">
+        <div class="run-head"><div><div class="run-title">后台全量关系分析 · {{ analysis_run.status_label }}</div><div class="muted" style="margin-top:5px">{{ analysis_run.status_detail }}</div></div><span class="badge {{ analysis_run.tone }}">耗时 {{ analysis_run.elapsed }}</span></div>
+        <div class="analysis-meta"><span class="badge">任务 {{ analysis_run.short_id }}</span><span class="badge">阶段 {{ analysis_run.phase }}</span><span class="badge info">{{ analysis_run.processed }} / {{ analysis_run.total or '?' }} 条</span><span class="badge">{{ analysis_run.percent }}%</span>{% if analysis_run.counts.auto_ready %}<span class="badge good">可验证 {{ analysis_run.counts.auto_ready }}</span>{% endif %}{% if analysis_run.counts.needs_data %}<span class="badge warn">待数据 {{ analysis_run.counts.needs_data }}</span>{% endif %}{% if analysis_run.counts.needs_context %}<span class="badge warn">待配置 {{ analysis_run.counts.needs_context }}</span>{% endif %}{% if analysis_run.item_error_count %}<span class="badge bad">异常 {{ analysis_run.item_error_count }}</span>{% endif %}</div>
+        <div class="progress-track" role="progressbar" aria-valuenow="{{ analysis_run.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width:{{ analysis_run.percent }}%"></span></div>
+        {% if analysis_run.error_type %}<div class="muted" style="margin-top:7px">错误类型 {{ analysis_run.error_type }}{% if analysis_run.error_reference %} · 编号 {{ analysis_run.error_reference }}{% endif %}</div>{% endif %}
+        {% if analysis_run.active and can_manage %}<form method="POST" action="{{ url_for('web.parameter_relations') }}" style="margin-top:9px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="cancel_relation_analysis"><input type="hidden" name="analysis_run_id" value="{{ analysis_run.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">停止后台分析</button></form>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="panel">
+        <form method="GET" action="{{ url_for('web.parameter_relations') }}" class="batch-form">
+            <input type="hidden" name="preview_batch" value="1"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}">
+            <div><label>自动批次就绪范围</label><strong>{{ batch_preview.ready_pairs }} 个接口对</strong><div class="muted">只读 {{ batch_preview.read_pairs }}；写/删 {{ batch_preview.mutation_pairs }}。多个字段共用一个接口对案例；另有 {{ batch_preview.approval_pairs }} 对需单独确认，不会重复进入自动批次。</div></div>
+            <div><label>总请求硬上限</label><input class="layui-input" type="number" name="total_request_budget" min="3" max="{{ execution_policy.approved_request_limit }}" value="{{ batch_preview.requested_budget }}"><div class="muted">每个接口对预留 3 次；先预览具体路径和 Host，再允许创建。</div></div>
+            <div class="batch-options"><label><input type="checkbox" name="include_mutations" value="1" {% if batch_preview.preview_include_mutations %}checked{% endif %} {% if not execution_policy.allow_mutation %}disabled{% endif %}> 包含 POST/PUT/PATCH/DELETE</label><div class="muted">{% if execution_policy.allow_mutation %}仅测试/预发测试账号；写后可回读。{% else %}当前环境策略禁止写操作。{% endif %}</div></div>
+            <div class="batch-options"><label><input type="checkbox" name="approve_large_run" value="1" {% if batch_preview.preview_approved_large_run %}checked{% endif %}> 批准超过自动预算 {{ execution_policy.auto_request_limit }}</label><div class="muted">仅当输入值超过自动预算时必须勾选；环境绝对上限 {{ execution_policy.approved_request_limit }}。</div></div>
+            <button class="layui-btn" type="submit" {% if not can_manage or not validation_context.ready or not batch_preview.ready_pairs or stats.active_batches or stats.validation_blocked %}disabled{% endif %}>预览将执行的接口对</button>
+        </form>
+        {% if batch_preview_error %}<div class="context-state" style="margin-top:10px">预览未生成：{{ batch_preview_error }}</div>{% endif %}
+        {% if batch_selection_preview %}
+        <div class="run-output" style="margin-top:14px">
+            <strong>执行前预览：{{ batch_selection_preview.pair_count }} 个接口对、{{ batch_selection_preview.field_count }} 个字段</strong>
+            <div class="muted">总请求硬上限 {{ batch_selection_preview.reserved_requests }}；只读 {{ batch_selection_preview.read_pair_count }} 对、写/删 {{ batch_selection_preview.mutation_pair_count }} 对。范围发生变化时确认会被拒绝，必须重新预览。</div>
+            {% if batch_selection_preview.skipped_source_blocked_pair_count %}<div class="muted">另已跳过 {{ batch_selection_preview.skipped_source_blocked_pair_count }} 个来源请求存在明确 Fixture / 认证阻塞的接口对，避免重复发送已知无效请求。</div>{% endif %}
+            <table class="layui-table" style="margin-top:9px">
+                <thead><tr><th>来源接口</th><th>消费接口</th><th>字段</th><th>预算</th></tr></thead>
+                <tbody>{% for pair in batch_selection_preview.pairs %}<tr><td><strong>{{ pair.source_method }}</strong> {{ pair.source_path }}<div class="muted">{{ pair.source_host or '未记录 Host' }}</div></td><td><strong>{{ pair.consumer_method }}</strong> {{ pair.consumer_path }}{% if pair.mutation %}<span class="badge bad">写/删</span>{% else %}<span class="badge good">只读</span>{% endif %}<div class="muted">{{ pair.consumer_host or '未记录 Host' }}</div></td><td>{{ pair.field_count }}</td><td>≤ {{ pair.request_budget }}</td></tr>{% endfor %}</tbody>
+            </table>
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" style="margin-top:9px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="validate_ready_batch"><input type="hidden" name="confirm_preview" value="1"><input type="hidden" name="preview_pair_keys" value="{{ batch_selection_preview.pair_keys_csv }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="total_request_budget" value="{{ batch_selection_preview.total_request_budget }}">{% if batch_selection_preview.include_mutations %}<input type="hidden" name="include_mutations" value="1">{% endif %}{% if batch_selection_preview.approved_large_run %}<input type="hidden" name="approve_large_run" value="1">{% endif %}
+                <button class="layui-btn" type="submit" {% if not can_manage or stats.active_batches or stats.validation_blocked %}disabled{% endif %}>确认并创建该批次</button>
             </form>
         </div>
-        <xblock>
-            <span class="x-right" style="line-height:40px">Total: {{ count }}</span>
-        </xblock>
-        <table class="layui-table">
-            <thead>
-            <tr>
-                <th>Parameter</th>
-                <th>ReqPathId</th>
-                <th>ResPathId</th>
-                <th>Relation</th>
-                <th>Rule</th>
-                <th>Verified</th>
-                <th>Evidence</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for row in hits %}
-                <tr>
-                    <td>{{ row.parameter }}</td>
-                    <td>{{ row.req_pathid }}</td>
-                    <td>{{ row.res_pathid }}</td>
-                    <td>{{ row.relation }}</td>
-                    <td>{{ row.rule }}</td>
-                    <td>{{ row.verified }}</td>
-                    <td>{{ row.evidence }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        <div class="page">
-            <div>
-                {% if hit.per_page %}
-                    <span onclick="page_flush('{{ hit.per_page }}', '{{ size }}')" style="cursor:pointer"
-                          class="prev">&lt;&lt;</span>
-                {% endif %}
+        {% endif %}
+    </section>
 
-                {% if hit.p_min %}
-                    <span onclick="page_flush('{{ hit.p_min }}', '{{ size }}')" style="cursor:pointer"
-                          class="num">{{ hit.p_min }}</span>
-                {% endif %}
+    {% if validation_run %}
+    <section class="panel run-panel {{ validation_run.tone }}" aria-live="polite">
+        <div class="run-head"><div><div class="run-title">最近自动验证 · {{ validation_run.status_label }}</div><div class="run-route">{% if validation_run.source.pathid %}<strong>{{ validation_run.source.method }} {{ validation_run.source.path }}</strong>（{{ validation_run.source.pathid }}） → <strong>{{ validation_run.consumer.method }} {{ validation_run.consumer.path }}</strong>（{{ validation_run.consumer.pathid }}）{% else %}请求案例 {{ validation_run.short_id }}{% endif %}</div><div class="muted" style="margin-top:5px">{{ validation_run.status_detail }} {% if validation_run.needs_auth_action %}<a href="{{ url_for('web.project_auth', project_id=project_id, env_id=validation_context.env_id, edit_profile_id=validation_context.source_profile_id, resume_run_id=validation_run.id) }}">打开认证诊断</a>{% endif %}</div></div><span class="badge {{ validation_run.tone }}">耗时 {{ validation_run.elapsed }}</span></div>
+        <div class="run-meta"><span class="badge">{{ validation_run.case_count }} 个接口对</span><span class="badge">{{ validation_run.field_count }} 个字段共用 {{ validation_run.case_count }} 个请求案例</span><span class="badge">总预算 ≤ {{ validation_run.request_budget }} 请求</span><span class="badge">每对 ≤ {{ validation_run.per_case_request_budget }} 请求</span><span class="badge {% if validation_run.request_count %}info{% endif %}">已发 {{ validation_run.request_count }} 请求</span>{% if validation_run.failed_cases %}<span class="badge bad">失败接口对 {{ validation_run.failed_cases }}</span>{% endif %}<span class="badge">批次 {{ validation_run.short_id }}</span></div>
+        {% if validation_run.needs_auth_action and can_manage %}<a class="layui-btn layui-btn-primary layui-btn-sm" style="margin-top:9px" href="{{ url_for('web.project_auth', project_id=project_id, env_id=validation_context.env_id, edit_profile_id=validation_context.source_profile_id, resume_run_id=validation_run.id) }}">先验证认证，再恢复这个原批次</a>{% endif %}
+        {% if validation_run.requires_host_approval and validation_run.retry_relation_id and can_manage %}
+        <form method="POST" action="{{ url_for('web.parameter_relations') }}" style="margin-top:9px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="row_source_host" value="{{ validation_run.retry_source_host or validation_context.source_host }}"><input type="hidden" name="row_consumer_host" value="{{ validation_run.retry_consumer_host or validation_context.consumer_host }}"><input type="hidden" name="relation_id" value="{{ validation_run.retry_relation_id }}"><input type="hidden" name="request_budget" value="{{ validation_run.recommended_retry_budget }}">
+            <button class="layui-btn layui-btn-primary layui-btn-sm" name="action" value="approve_validate" type="submit">确认扩大 Host，按 ≤{{ validation_run.recommended_retry_budget }} 请求重试原接口对</button>
+            <span class="muted">将继续使用同一项目、环境和测试账号；来源阶段未通过时不会发送消费请求。</span>
+        </form>
+        {% endif %}
+        <div class="run-steps">{% for step in validation_run.steps %}<div class="run-step {{ step.state }}"><strong><span class="step-index">{{ step.index }}</span>{{ step.title }}</strong><div class="muted">{{ step.detail }}</div></div>{% endfor %}</div>
+        {% if validation_run.attempts or validation_run.result_status_items %}<div class="run-output">{% for attempt in validation_run.attempts %}<div class="run-attempt {% if attempt.ok %}good{% else %}bad{% endif %}"><strong>{{ attempt.role }}请求 {{ loop.index }}</strong> · {{ attempt.host }} · {% if attempt.status_code %}HTTP {{ attempt.status_code }}{% else %}{{ attempt.error_type or '无响应' }}{% endif %} · {{ attempt.elapsed_ms }}ms{% if attempt.error_code %} · 错误码 {{ attempt.error_code }}{% endif %}{% if attempt.error_fields %}<div class="muted">错误字段：{{ attempt.error_fields|join('、') }}</div>{% elif attempt.response_top_level_keys %}<div class="muted">响应字段：{{ attempt.response_top_level_keys[:8]|join('、') }}</div>{% endif %}{{ request_composition(attempt) }}</div>{% endfor %}{% for item in validation_run.result_status_items %}<span class="badge {% if item.successful %}good{% else %}warn{% endif %}">{{ item.label }} {{ item.count }} 字段</span>{% endfor %}</div>{% endif %}
+    </section>
+    {% endif %}
 
-                {% if hit.per_ellipsis %}
-                    <span class="num" style="cursor: pointer"> ... </span>
-                {% endif %}
+    <section class="panel">
+        <form action="{{ url_for('web.parameter_relations') }}" method="GET" class="layui-form context-grid">
+            <div><label>项目</label><select name="project_id">{% for project in projects %}<option value="{{ project.id }}" {% if project.id == project_id %}selected{% endif %}>{{ project.name }}（{{ project.count }} 接口）</option>{% endfor %}</select></div>
+            <div><label>环境</label><select name="env_id">{% for environment in validation_context.environments %}<option value="{{ environment.env_id }}" {% if environment.env_id == validation_context.env_id %}selected{% endif %}>{{ environment.name or environment.env_id }}</option>{% endfor %}</select></div>
+            <div><label>来源账号</label><select name="source_profile_id">{% for profile in validation_context.profiles %}<option value="{{ profile.profile_id }}" {% if profile.profile_id == validation_context.source_profile_id %}selected{% endif %}>{{ profile.name }} / {{ profile.account_key }}</option>{% endfor %}</select></div>
+            <div><label>来源 Host</label><select name="source_host">{% for host in validation_context.hosts %}<option value="{{ host }}" {% if host == validation_context.source_host %}selected{% endif %}>{{ host }}</option>{% endfor %}</select></div>
+            <div><label>消费账号</label><select name="consumer_profile_id">{% for profile in validation_context.profiles %}<option value="{{ profile.profile_id }}" {% if profile.profile_id == validation_context.consumer_profile_id %}selected{% endif %}>{{ profile.name }} / {{ profile.account_key }}</option>{% endfor %}</select></div>
+            <div><label>消费 Host</label><select name="consumer_host">{% for host in validation_context.hosts %}<option value="{{ host }}" {% if host == validation_context.consumer_host %}selected{% endif %}>{{ host }}</option>{% endfor %}</select></div>
+            <button class="layui-btn" type="submit">应用上下文</button>
+        </form>
+        <div class="context-state {% if validation_context.ready %}ready{% endif %}">{% if validation_context.ready %}已就绪：{{ validation_context.env_id }} / {{ execution_policy.environment_type }}，自动预算 {{ execution_policy.auto_request_limit }} 次；{% if execution_policy.allow_mutation %}测试数据写入/删除已开启{% else %}当前仅自动读取{% endif %}。{% else %}还缺环境、Host 或认证方案。请先完成<a href="{{ url_for('web.project_auth', project_id=project_id) }}">环境与认证配置</a>。{% endif %}</div>
+    </section>
 
-                {% for p in hit.dic %}
-                    <span onclick="page_flush('{{ p }}', '{{ size }}')"
-                            {% if p == page %} class="current" {% else %} class="num" {% endif %}
-                          style="cursor: pointer">{{ p }}</span>
-                {% endfor %}
+    <section class="panel"><div class="queue">{% for tab in queue_tabs %}<a class="{% if (form.task or '') == tab.key %}active{% endif %}" href="{{ url_for('web.parameter_relations', project_id=project_id, env_id=validation_context.env_id, source_profile_id=validation_context.source_profile_id, consumer_profile_id=validation_context.consumer_profile_id, source_host=validation_context.source_host, consumer_host=validation_context.consumer_host, task=tab.key, parameter=form.parameter, size=size) }}">{{ tab.label }} {{ tab.count }}</a>{% endfor %}</div>
+        <form action="{{ url_for('web.parameter_relations') }}" method="GET" class="layui-form toolbar" style="margin-top:10px;"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input class="layui-input" style="width:260px" name="parameter" value="{{ form.parameter or '' }}" placeholder="搜索映射字段"><select name="size" style="width:100px"><option value="10" {% if size == 10 %}selected{% endif %}>10 对</option><option value="20" {% if size == 20 %}selected{% endif %}>20 对</option><option value="50" {% if size == 50 %}selected{% endif %}>50 对</option></select><button class="layui-btn layui-btn-primary" type="submit">筛选</button></form>
+    </section>
 
-                {% if hit.suf_ellipsis %}
-                    <span class="num" style="cursor: pointer"> ... </span>
-                {% endif %}
+    {% for item in hits %}{% set row = item.doc %}
+    <article class="relation-card" id="pair-{{ item.pair_key|replace(':', '-') }}">
+        <header class="card-head"><div><div class="pair-title">接口对 {{ item.source.pathid or '-' }} → {{ item.consumer.pathid or '-' }}</div><span class="badge {% if item.status in ['verified','trusted'] %}good{% elif item.status in ['needs_correction','automatic_failed','policy_blocked'] %}bad{% else %}warn{% endif %}">{{ item.status_label }}</span><span class="badge">置信度 {{ (row.machine_confidence * 100)|round|int }}%</span><span class="badge good">一次验证 {{ item.pair_relation_count }} 个字段</span><span class="badge">预计 ≤ {{ row.estimated_requests or 0 }} 请求</span>{% if item.protected %}<span class="badge info">受保护，不被导入覆盖</span>{% endif %}{% for source in item.evidence_sources %}<span class="badge">{{ '接口文档' if source == 'document' else '真实流量' }}</span>{% endfor %}</div><a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_priority', project_id=project_id, q=row.parameter) }}">查看参数资产</a></header>
 
-                {% if hit.p_max %}
-                    <span onclick="page_flush('{{ hit.p_max }}', '{{ size }}')" style="cursor:pointer"
-                          class="num">{{ hit.p_max }}</span>
-                {% endif %}
-
-                {% if hit.next_page %}
-                    <span onclick="page_flush('{{ hit.next_page }}', '{{ size }}')" class="next"
-                          style="cursor:pointer">&gt;&gt;</span>
-                {% endif %}
-            </div>
+        <div class="flow">
+            <div class="endpoint-card"><div class="role">来源接口 · 提取响应字段</div><div class="endpoint-path"><strong>{{ item.source.method }}</strong>{{ item.source.path }}</div><div class="muted">{{ item.source.description or item.source.domain or '-' }}</div></div>
+            <div class="flow-center"><div class="arrow">→</div><strong>{{ item.pair_relation_count }} 条字段映射</strong><span>同一次来源 / 消费请求</span></div>
+            <div class="endpoint-card"><div class="role">消费接口 · 注入请求参数</div><div class="endpoint-path"><strong>{{ item.consumer.method }}</strong>{{ item.consumer.path }}</div><div class="muted">{{ item.consumer.description or item.consumer.domain or '-' }}</div></div>
         </div>
-    </div>
+        <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>来源响应字段</th><th>传递</th><th>消费请求字段</th><th>规范参数</th><th>状态</th></tr></thead><tbody>{% for mapping in item.pair_mappings %}<tr><td><span class="badge">{{ mapping.source_position }}</span> <code>{{ mapping.source }}</code></td><td>保持原始类型 →</td><td><span class="badge">{{ mapping.target_position }}</span> <code>{{ mapping.consumer }}</code></td><td>{{ mapping.parameter }}</td><td><span class="badge {% if mapping.verified %}good{% elif not mapping.resolved %}bad{% else %}warn{% endif %}">{{ mapping.status_label }}</span>{% if not mapping.resolved %}<span class="badge bad">位置未解析</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+        <div class="conclusion {% if item.status in ['needs_correction','automatic_failed','policy_blocked'] %}bad{% elif item.status not in ['verified','trusted'] %}warn{% endif %}"><strong>{{ item.conclusion_title }}</strong>{{ item.conclusion_detail }}{% if item.stale_reason %}<div class="muted">原确认关系和证据已保留；结构变化原因：{{ item.stale_reason }}。</div>{% endif %}</div>
 
-    <script>
-        function page_flush(page, size) {
-            let url = $("#url").val() + "?page=" + page + "&size=" + size;
-            $("#p_form")[0].action = url;
-            $("#p_form").submit();
-        }
-    </script>
+        {% if item.detail_loaded %}
+        <details class="drawer" open><summary>接口详情与请求 / 响应样本 · 已加载</summary><div class="drawer-body">{{ endpoint_inspector(item.source_detail, '来源') }}{{ endpoint_inspector(item.consumer_detail, '消费') }}</div></details>
+
+        <details class="drawer" {% if item.source_input.gaps or item.consumer_input.gaps or item.status == 'needs_data' %}open{% endif %}><summary>请求数据与执行{% if item.source_input.gaps or item.consumer_input.gaps %} · 缺少 {{ (item.source_input.gaps|length) + (item.consumer_input.gaps|length) }} 个必填字段{% endif %}</summary><div class="drawer-body">
+            <div class="input-readiness"><strong>请求数据预检</strong><div class="input-row">来源：自动 {{ item.source_input.coverage.automatic or 0 }}，模板 {{ item.source_input.coverage.fixture or 0 }}，认证 {{ item.source_input.coverage.auth or 0 }}；{% if item.source_input.gaps %}<span class="badge bad">缺 {{ item.source_input.gaps|length }}</span>{% for gap in item.source_input.gaps %}<span class="badge bad">{{ gap.position }} · {{ gap.parameter }}</span>{% endfor %}{% else %}<span class="badge good">必填已就绪</span>{% endif %}</div><div class="input-row">消费：关系注入 {{ item.consumer_input.coverage.relation or 0 }}，自动 {{ item.consumer_input.coverage.automatic or 0 }}，模板 {{ item.consumer_input.coverage.fixture or 0 }}，认证 {{ item.consumer_input.coverage.auth or 0 }}；{% if item.consumer_input.gaps %}<span class="badge bad">缺 {{ item.consumer_input.gaps|length }}</span>{% for gap in item.consumer_input.gaps %}<span class="badge bad">{{ gap.position }} · {{ gap.parameter }}</span>{% endfor %}{% else %}<span class="badge good">必填已就绪</span>{% endif %}</div></div>
+            <details class="fixture-editor" {% if item.source_input.gaps or item.consumer_input.gaps %}open{% endif %}><summary>补充非关联业务数据（同接口、环境、账号复用）</summary><div class="muted">只补机器无法推断的字段。Authorization、Cookie 和 Token 由认证方案运行前刷新，不写入这里。</div>
+                <form method="POST" action="{{ url_for('web.parameter_relations') }}" class="fixture-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="save_fixture"><input type="hidden" name="fixture_side" value="source"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}"><strong>来源接口 {{ item.source.pathid }} · {{ item.source.method }}</strong><div class="fixture-grid"><div><label>Query JSON</label><textarea class="layui-textarea" name="fixture_query_json">{{ item.source_input.query_json or '{}' }}</textarea></div><div><label>Path JSON</label><textarea class="layui-textarea" name="fixture_path_json">{{ item.source_input.path_json or '{}' }}</textarea></div><div><label>Header JSON（非认证）</label><textarea class="layui-textarea" name="fixture_headers_json">{{ item.source_input.headers_json or '{}' }}</textarea></div><div><label>Body JSON</label><textarea class="layui-textarea" name="fixture_body_json">{{ item.source_input.body_json or '' }}</textarea></div><div class="wide"><label>用途说明</label><input class="layui-input" name="fixture_note" value="{{ item.source_input.note or '' }}"></div><button class="layui-btn layui-btn-primary wide" type="submit" {% if not can_manage or not validation_context.environment or not validation_context.source_profile %}disabled{% endif %}>保存来源数据并重算</button></div></form>
+                <form method="POST" action="{{ url_for('web.parameter_relations') }}" class="fixture-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="save_fixture"><input type="hidden" name="fixture_side" value="consumer"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}"><strong>消费接口 {{ item.consumer.pathid }} · {{ item.consumer.method }}</strong><div class="fixture-grid"><div><label>Query JSON</label><textarea class="layui-textarea" name="fixture_query_json">{{ item.consumer_input.query_json or '{}' }}</textarea></div><div><label>Path JSON</label><textarea class="layui-textarea" name="fixture_path_json">{{ item.consumer_input.path_json or '{}' }}</textarea></div><div><label>Header JSON（非认证）</label><textarea class="layui-textarea" name="fixture_headers_json">{{ item.consumer_input.headers_json or '{}' }}</textarea></div><div><label>Body JSON</label><textarea class="layui-textarea" name="fixture_body_json">{{ item.consumer_input.body_json or '' }}</textarea></div><div class="wide"><label>用途说明</label><input class="layui-input" name="fixture_note" value="{{ item.consumer_input.note or '' }}"></div><button class="layui-btn layui-btn-primary wide" type="submit" {% if not can_manage or not validation_context.environment or not validation_context.consumer_profile %}disabled{% endif %}>保存消费数据并重算</button></div></form>
+            </details>
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" class="layui-form host-grid" style="margin-top:9px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}">
+                <div><label>来源 Host</label><select name="row_source_host">{% for host in item.source_hosts %}<option value="{{ host.host }}" {% if host.host == row.selected_source_host %}selected{% endif %}>{{ host.host }} · {{ host.reason }}</option>{% endfor %}</select></div>
+                <div><label>消费 Host</label><select name="row_consumer_host">{% for host in item.consumer_hosts %}<option value="{{ host.host }}" {% if host.host == row.selected_consumer_host %}selected{% endif %}>{{ host.host }} · {{ host.reason }}</option>{% endfor %}</select></div>
+                <div><label>本次请求预算</label><input class="layui-input" type="number" name="request_budget" min="1" max="{{ execution_policy.approved_request_limit }}" value="{{ execution_policy.auto_request_limit }}"><div class="muted">测试/预发最多 {{ execution_policy.approved_request_limit }}；生产/未知环境硬限制 {{ execution_policy.approved_request_limit }}。</div></div>
+                <div><label>预算策略</label><div class="muted">自动执行不超过 {{ execution_policy.auto_request_limit }} 次；超出时必须点“按预算批准执行”。</div></div>
+                <button class="layui-btn layui-btn-primary wide" name="action" value="save_hosts" type="submit" {% if not validation_context.ready or not can_manage %}disabled{% endif %}>保存 Host 并重算</button>
+                <button class="layui-btn layui-btn-primary wide" name="action" value="validate_relation" type="submit" {% if not validation_context.ready or not can_manage or item.status in ['needs_context','needs_data','needs_correction','policy_blocked','rejected','running'] %}disabled{% endif %}>按自动预算验证（{{ item.pair_relation_count }} 字段 / ≤{{ execution_policy.auto_request_limit }} 请求）</button>
+                {% if execution_policy.approved_request_limit > execution_policy.auto_request_limit or item.can_approve %}<button class="layui-btn wide" name="action" value="approve_validate" type="submit" {% if not validation_context.ready or not can_manage or item.status == 'needs_data' %}disabled{% endif %}>按本次预算批准执行</button>{% endif %}
+            </form>
+            {% if item.consumer.method in ['POST','PUT','PATCH','DELETE'] %}<div class="danger-note">这是测试数据写 / 删验证。401/403/404/405/421 或连接失败会自动跨 Host；成功、超时或 5xx 后停止跨 Host，并在预算允许时回读。接口报错但数据已变化会标记为开发缺陷。</div>{% endif %}
+        </div></details>
+        {% else %}
+        <details class="drawer"><summary>接口证据、真实样本与请求数据 · 按需加载</summary><div class="drawer-body"><div class="muted">列表只展示已预处理结论，避免一次读取 20 个接口对的全部样本与请求依赖。需要核对或补数据时再加载当前接口对。</div><a class="layui-btn layui-btn-primary layui-btn-sm" style="margin-top:8px" href="{{ item.detail_url }}">加载当前接口对详情</a></div></details>
+        {% endif %}
+
+        <details class="drawer"><summary>机器证据与验证记录</summary><div class="drawer-body">{% for evidence in item.evidence_items %}<div class="evidence-item"><strong>{{ evidence.title }}</strong><div class="muted">{{ evidence.detail }}</div></div>{% endfor %}{% if item.latest_validation %}<div class="latest"><strong>最近真实验证 · {{ item.latest_validation.status_label }}</strong><div>{{ item.latest_validation.summary }}</div><div class="muted">{{ item.latest_validation.request_count or '-' }} 次请求{% if item.latest_validation.effect_label %} · {{ item.latest_validation.effect_label }}{% endif %}</div>{% for attempt in item.latest_validation.source_attempts %}<div class="attempt {{ attempt.tone }}">来源 {{ loop.index }}：{{ attempt.host }}{% if attempt.status_code %} · HTTP {{ attempt.status_code }}{% elif attempt.error_type %} · {{ attempt.error_type }}{% endif %}{% if attempt.error_code %} · 错误码 {{ attempt.error_code }}{% endif %} — {{ attempt.message }}{% if attempt.error_fields %}<div class="muted">错误字段：{{ attempt.error_fields|join('、') }}</div>{% elif attempt.response_top_level_keys %}<div class="muted">响应字段：{{ attempt.response_top_level_keys[:8]|join('、') }}</div>{% endif %}{{ request_composition(attempt) }}</div>{% endfor %}{% for attempt in item.latest_validation.consumer_attempts %}<div class="attempt {{ attempt.tone }}">消费 {{ loop.index }}：{{ attempt.host }}{% if attempt.status_code %} · HTTP {{ attempt.status_code }}{% elif attempt.error_type %} · {{ attempt.error_type }}{% endif %}{% if attempt.error_code %} · 错误码 {{ attempt.error_code }}{% endif %} — {{ attempt.message }}{% if attempt.error_fields %}<div class="muted">错误字段：{{ attempt.error_fields|join('、') }}</div>{% elif attempt.response_top_level_keys %}<div class="muted">响应字段：{{ attempt.response_top_level_keys[:8]|join('、') }}</div>{% endif %}{{ request_composition(attempt) }}</div>{% endfor %}</div>{% endif %}{% if item.historical_evidence_items %}<details><summary>历史启发式信号</summary>{% for evidence in item.historical_evidence_items %}<div class="evidence-item"><strong>{{ evidence.title }}</strong><div class="muted">{{ evidence.detail }}</div></div>{% endfor %}</details>{% endif %}</div></details>
+
+        <details class="drawer"><summary>人工修改、停用或删除</summary><div class="drawer-body">
+            <div class="muted">人工覆盖会被后续导入保护；修改后进入“待复验”。“确认误关联”是可审计停用；删除会留下最小抑制标记，防止同一错误关系被机器重新发现。</div>
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" style="margin-top:8px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="swap_direction"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}"><button class="layui-btn layui-btn-primary layui-btn-sm" type="submit" {% if not can_manage %}disabled{% endif %}>交换整个接口对上下游</button></form>
+            {% for mapping in item.pair_mappings %}
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" class="layui-form manual-grid fixture-editor">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="save_mapping"><input type="hidden" name="relation_id" value="{{ mapping.relation_id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}">
+                <div><label>来源响应字段</label><input class="layui-input" name="source_parameter" value="{{ mapping.source_parameter }}"></div>
+                <div><label>来源位置</label><select name="source_position">{% for position in ['body','header','cookie','query','path','form'] %}<option value="{{ position }}" {% if mapping.source_position == position %}selected{% endif %}>{{ position }}</option>{% endfor %}</select></div>
+                <div><label>消费请求字段</label><input class="layui-input" name="target_parameter" value="{{ mapping.target_parameter }}"></div>
+                <div><label>消费位置</label><select name="target_position">{% for position in ['body','query','path','header','cookie','form'] %}<option value="{{ position }}" {% if mapping.target_position == position %}selected{% endif %}>{{ position }}</option>{% endfor %}</select></div>
+                <input class="layui-input wide" name="manual_note" placeholder="修改原因（可选）">
+                <button class="layui-btn layui-btn-primary wide" type="submit" {% if not can_manage %}disabled{% endif %}>保存 {{ mapping.parameter }} 的人工映射</button>
+            </form>
+            {% endfor %}
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" class="layui-form manual-grid" style="margin-top:8px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="save_manual"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><input type="hidden" name="parameter" value="{{ form.parameter or '' }}"><input type="hidden" name="task" value="{{ form.task or '' }}"><input type="hidden" name="size" value="{{ size }}"><select name="manual_decision"><option value="">不修改结论</option><option value="reset">恢复机器判断</option><option value="trusted" {% if row.manual_decision == 'trusted' %}selected{% endif %}>确认可信</option><option value="rejected" {% if row.manual_decision == 'rejected' %}selected{% endif %}>停用：确认误关联</option><option value="needs_data" {% if row.manual_decision == 'needs_data' %}selected{% endif %}>需要业务样本</option><option value="stale" {% if row.manual_decision == 'stale' %}selected{% endif %}>经验已过期</option></select><button class="layui-btn layui-btn-primary" type="submit" {% if not can_manage %}disabled{% endif %}>保存纠偏</button><textarea class="layui-textarea wide" name="manual_note" placeholder="只写机器无法知道的业务事实">{{ row.manual_note or '' }}</textarea></form>
+            <form method="POST" action="{{ url_for('web.parameter_relations') }}" onsubmit="return confirm('删除后该关系不会被自动重新发现，确认继续？');" style="margin-top:10px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete_relation"><input type="hidden" name="confirm_delete" value="yes"><input type="hidden" name="relation_id" value="{{ row.id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="env_id" value="{{ validation_context.env_id }}"><input type="hidden" name="source_profile_id" value="{{ validation_context.source_profile_id }}"><input type="hidden" name="consumer_profile_id" value="{{ validation_context.consumer_profile_id }}"><input type="hidden" name="source_host" value="{{ validation_context.source_host }}"><input type="hidden" name="consumer_host" value="{{ validation_context.consumer_host }}"><button class="layui-btn layui-btn-danger layui-btn-sm" type="submit" {% if not can_manage %}disabled{% endif %}>删除当前字段关系并禁止重新发现</button></form>
+        </div></details>
+    </article>
+    {% else %}<section class="panel muted" style="text-align:center;padding:28px">{% if stats.total == 0 %}当前项目尚未生成关系。点击“发现并分析关系”，系统会优先使用 Apifox / OpenAPI 结构，再用真实流量补充取值与频率证据。{% else %}当前筛选条件下没有接口关系。{% endif %}</section>{% endfor %}
+
+    <section class="panel pager"><div>第 {{ page + 1 }} 页，当前筛选共 {{ count }} 个接口对</div><div>{% if page > 0 %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_relations', project_id=project_id, env_id=validation_context.env_id, source_profile_id=validation_context.source_profile_id, consumer_profile_id=validation_context.consumer_profile_id, source_host=validation_context.source_host, consumer_host=validation_context.consumer_host, task=form.task, parameter=form.parameter, size=size, page=page-1) }}">上一页</a>{% endif %} {% if (page + 1) * size < count %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_relations', project_id=project_id, env_id=validation_context.env_id, source_profile_id=validation_context.source_profile_id, consumer_profile_id=validation_context.consumer_profile_id, source_host=validation_context.source_host, consumer_host=validation_context.consumer_host, task=form.task, parameter=form.parameter, size=size, page=page+1) }}">下一页</a>{% endif %}</div></section>
+</div>
+{% if (validation_run and validation_run.active) or (analysis_run and analysis_run.active) %}<script>window.setTimeout(function(){ window.location.reload(); }, 4000);</script>{% endif %}
 {% endblock %}

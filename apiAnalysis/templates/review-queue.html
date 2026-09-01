@@ -1,0 +1,138 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body">
+    {% if notice %}
+        <blockquote class="layui-elem-quote {% if notice.level == 'success' %}layui-quote-nm{% endif %}">
+            {{ notice.text }}
+        </blockquote>
+    {% endif %}
+
+    <div class="layui-row" style="margin-bottom:10px;">
+        <form action="{{ url_for('web.review_queue') }}" method="GET" class="layui-form layui-col-space5" style="display:inline;">
+            <div class="layui-input-inline" style="width:200px;">
+                <select name="project_id">
+                    <option value="">全部项目</option>
+                    {% for p in projects %}
+                        <option value="{{ p.project_id }}" {% if project_id == p.project_id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline" style="width:100px;">
+                <button class="layui-btn layui-btn-sm" lay-submit>筛选</button>
+            </div>
+        </form>
+        <span style="float:right;line-height:38px;color:#666;">共 {{ results|length }} 条待复核</span>
+    </div>
+
+    {% if can_manage and results %}
+    <form id="batch_form" action="{{ url_for('web.review_queue') }}" method="POST">
+        <input type="hidden" name="project_id" value="{{ project_id }}">
+    </form>
+    <div style="margin-bottom:10px;">
+        <button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="batchAction('batch_confirm')">批量确认为漏洞</button>
+        <button type="button" class="layui-btn layui-btn-sm layui-btn-warm" onclick="batchAction('batch_reject')">批量标记误报</button>
+        <label style="margin-left:15px;"><input type="checkbox" id="select_all"> 全选</label>
+    </div>
+    {% endif %}
+
+    <table class="layui-table" lay-size="sm">
+        <thead>
+            <tr>
+                {% if can_manage %}<th style="width:30px;"></th>{% endif %}
+                <th>用例</th><th>目标</th><th>检查类型</th><th>verdict</th><th>outcome</th><th>置信度</th><th>原因码</th><th>时间</th>
+                {% if can_manage %}<th style="width:140px;">操作</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in results %}
+            <tr>
+                {% if can_manage %}
+                <td><input type="checkbox" name="result_ids" value="{{ r.id }}" class="row-check" form="batch_form"></td>
+                {% endif %}
+                <td title="{{ r.case_name }}">{{ (r.case_name or '')[:50] }}</td>
+                <td><small>{{ result_targets.get(r.id|string, '未记录目标') }}</small></td>
+                <td><small>{{ r.check_type }}</small></td>
+                <td>
+                    {% if r.verdict in ('potential_vuln','UNAUTH_EXPOSURE','PARTIAL_IDOR_PARAM') %}
+                        <span class="layui-badge">{{ r.verdict }}</span>
+                    {% elif r.verdict in ('need_review','review') %}
+                        <span class="layui-badge layui-bg-orange">{{ r.verdict }}</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-gray">{{ r.verdict }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if r.outcome_class == 'candidate' %}
+                        <span class="layui-badge">{{ r.outcome_class }}</span>
+                    {% elif r.outcome_class == 'review' %}
+                        <span class="layui-badge layui-bg-orange">{{ r.outcome_class }}</span>
+                    {% elif r.outcome_class == 'pass' %}
+                        <span class="layui-badge layui-bg-green">{{ r.outcome_class }}</span>
+                    {% elif r.outcome_class == 'blocked' %}
+                        <span class="layui-badge layui-bg-gray">{{ r.outcome_class }}</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-blue">{{ r.outcome_class or '-' }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ '%.0f%%'|format(r.confidence * 100) if r.confidence else '-' }}</td>
+                <td><small>{{ (r.reason_codes or [])[:3]|join(', ') }}</small></td>
+                <td><small>{{ r.ctime.strftime('%m-%d %H:%M') if r.ctime else '' }}</small></td>
+                {% if can_manage %}
+                <td>
+                    <form action="{{ url_for('web.review_queue') }}" method="POST" style="display:inline">
+                        <input type="hidden" name="project_id" value="{{ project_id }}">
+                        <input type="hidden" name="result_id" value="{{ r.id }}">
+                        <input type="hidden" name="action" value="confirm">
+                        <button class="layui-btn layui-btn-xs layui-btn-danger">确认</button>
+                    </form>
+                    <form action="{{ url_for('web.review_queue') }}" method="POST" style="display:inline">
+                        <input type="hidden" name="project_id" value="{{ project_id }}">
+                        <input type="hidden" name="result_id" value="{{ r.id }}">
+                        <input type="hidden" name="action" value="reject">
+                        <button class="layui-btn layui-btn-xs layui-btn-warm">误报</button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% if result_events.get(r.id|string) %}
+            <tr>
+                <td colspan="{% if can_manage %}10{% else %}9{% endif %}" style="background:#f8f8f8;padding:4px 12px;">
+                    {% for ev in result_events[r.id|string] %}
+                        <small style="color:#666;">[{{ ev.ctime.strftime('%m-%d %H:%M') if ev.ctime else '' }}] {{ ev.reviewer }}: {{ ev.action }} - {{ ev.reason or '' }}</small><br>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+            {% if not results %}
+            <tr><td colspan="{% if can_manage %}10{% else %}9{% endif %}" style="text-align:center;color:#999;">复核队列为空 🎉</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+{% if can_manage %}
+<script>
+function batchAction(action) {
+    var checked = document.querySelectorAll('.row-check:checked');
+    if (checked.length === 0) {
+        layer.msg('请先勾选要处理的结果', {icon: 0});
+        return;
+    }
+    var label = action === 'batch_confirm' ? '确认为漏洞' : '标记为误报';
+    layer.confirm('确定将 ' + checked.length + ' 条结果' + label + '？', function(idx) {
+        var form = document.getElementById('batch_form');
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'action'; input.value = action;
+        form.appendChild(input);
+        form.submit();
+        layer.close(idx);
+    });
+}
+document.getElementById('select_all').addEventListener('change', function() {
+    document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = this.checked; }.bind(this));
+});
+</script>
+{% endif %}
+{% endblock %}

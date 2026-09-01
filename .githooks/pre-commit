@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+if command -v py >/dev/null 2>&1; then
+  exec py -3.9 tools/public_repo_guard.py --staged
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 tools/public_repo_guard.py --staged
+fi
+exec python tools/public_repo_guard.py --staged

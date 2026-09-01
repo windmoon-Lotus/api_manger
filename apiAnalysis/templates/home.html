@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block body %}
     <div class="container">
-        <div class="logo"><a href="{{ url_for('web.home') }}">AuthCheck v0.1</a></div>
+        <div class="logo"><a href="{{ url_for('web.home') }}">AuthCheck v{{ app_version }}</a></div>
         <div class="left_open">
             <i title="Expand Left" class="iconfont">&#xe699;</i>
         </div>
@@ -26,42 +26,76 @@
     <div class="left-nav">
         <div id="side-nav">
             <ul id="nav">
-                {% if is_manager() %}
-                    <li>
-                        <a href="javascript:;">
-                            <i class="iconfont">&#xe726;</i>
-                            <cite>{{ t('nav_admin') }}</cite>
-                            <i class="iconfont nav_right">&#xe697;</i>
-                        </a>
-                        <ul class="sub-menu">
-                            <li>
-                                <a _href="{{ url_for('web.sso_account') }}">
-                                    <i class="iconfont">&#xe6a7;</i>
-                                    <cite>{{ t('nav_accounts') }}</cite>
-                                </a>
-                            </li>
-                        </ul>
-                    </li>
-                {% endif %}
+                {# ── 1. 工作台 ── #}
+                <li>
+                    <a _href="{{ url_for('web.welcome') }}">
+                        <i class="layui-icon layui-icon-home"></i>
+                        <cite>工作台</cite>
+                    </a>
+                </li>
+
+                {# ── 2. 项目 ── #}
                 <li>
                     <a href="javascript:;">
-                        <i class="layui-icon layui-icon-spread-left"></i>
-                        <cite>{{ t('nav_traffic') }}</cite>
+                        <i class="layui-icon layui-icon-template-1"></i>
+                        <cite>项目</cite>
                         <i class="iconfont nav_right">&#xe697;</i>
                     </a>
                     <ul class="sub-menu">
-                        <li><a _href="{{ url_for('web.workspace') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_workspace') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.rawdata') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_api_management') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.import_data') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_import_center') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.parameter_relations') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_param_relations') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.ops_panel') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_ops') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.privilege_tasks') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_privilege_tasks') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.vuln_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_vuln') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.code_review_web') }}"><i class="iconfont">&#xe6a7;</i><cite>代码待确认</cite></a></li>
-                        <li><a _href="{{ url_for('web.version_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_version') }}</cite></a></li>
-                        <li><a _href="{{ url_for('web.testcase_list_web') }}"><i class="iconfont">&#xe6a7;</i><cite>{{ t('nav_testcase') }}</cite></a></li>
+                        <li><a _href="{{ url_for('web.project_list') }}"><i class="iconfont">&#xe6a7;</i><cite>项目列表</cite></a></li>
                     </ul>
                 </li>
+
+                {# ── 3. 数据源 ── #}
+                <li>
+                    <a _href="{{ url_for('web.data_source_center') }}">
+                        <i class="layui-icon layui-icon-transfer"></i>
+                        <cite>数据源</cite>
+                    </a>
+                </li>
+
+                {# ── 4. 全局执行记录 ── #}
+                <li>
+                    <a _href="{{ url_for('web.project_execution_center') }}">
+                        <i class="layui-icon layui-icon-play"></i>
+                        <cite>全局执行记录</cite>
+                    </a>
+                </li>
+
+                {# ── 5. 漏洞中心 ── #}
+                <li>
+                    <a href="javascript:;">
+                        <i class="layui-icon layui-icon-vercode"></i>
+                        <cite>漏洞中心</cite>
+                        <i class="iconfont nav_right">&#xe697;</i>
+                    </a>
+                    <ul class="sub-menu">
+                        <li><a _href="{{ url_for('web.review_queue') }}"><i class="iconfont">&#xe6a7;</i><cite>复核队列</cite></a></li>
+                        <li><a _href="{{ url_for('web.findings_list') }}"><i class="iconfont">&#xe6a7;</i><cite>漏洞发现</cite></a></li>
+                    </ul>
+                </li>
+
+                {# ── 5.5 配置认证 ── #}
+                <li>
+                    <a _href="{{ url_for('web.auth_import_wizard') }}">
+                        <i class="layui-icon layui-icon-key"></i>
+                        <cite>配置认证</cite>
+                    </a>
+                </li>
+
+                {# ── 6. 扩展与设置 ── #}
+                {% if is_manager() %}
+                <li>
+                    <a href="javascript:;">
+                        <i class="layui-icon layui-icon-set"></i>
+                        <cite>扩展与设置</cite>
+                        <i class="iconfont nav_right">&#xe697;</i>
+                    </a>
+                    <ul class="sub-menu">
+                        <li><a _href="{{ url_for('web.sso_account') }}"><i class="iconfont">&#xe6a7;</i><cite>测试账号</cite></a></li>
+                    </ul>
+                </li>
+                {% endif %}
             </ul>
         </div>
     </div>

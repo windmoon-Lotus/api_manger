@@ -1,0 +1,30 @@
+name: public-data-guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Scan the public tree
+        run: python tools/public_repo_guard.py --tracked
+
+      - name: Run governance unit tests
+        run: |
+          python -m unittest discover -s tests -p "test_public_repo_guard.py"
+          python -m unittest discover -s tests -p "test_data_paths.py"

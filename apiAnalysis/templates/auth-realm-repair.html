@@ -1,0 +1,1716 @@
+{% extends "layout.html" %}
+
+{% block body %}
+{% set current_status = health.status if health else 'unknown' %}
+{% set initial_editor_mode = 'sso_product' if workflow_summary.template == 'sso_session_product_token_v1' else ('workflow' if workflow_summary.step_count > 1 else 'quick') %}
+<div class="x-body auth-studio">
+    <style>
+        .auth-studio {
+            --ink:#172033;
+            --muted:#667085;
+            --line:#dfe4ea;
+            --soft:#f6f8fb;
+            --brand:#087f73;
+            --brand-soft:#ecfdf8;
+            --danger:#b42318;
+            --danger-soft:#fff3f2;
+            --warning:#a15c07;
+            --warning-soft:#fff8e7;
+            --success:#067647;
+            --success-soft:#ecfdf3;
+            min-height:100%;
+            color:var(--ink);
+            background:#f4f6f9;
+        }
+        .studio-card {
+            margin-bottom:14px;
+            border:1px solid var(--line);
+            background:#fff;
+            box-shadow:0 1px 2px rgba(16,24,40,.03);
+        }
+        .studio-hero {
+            display:flex;
+            align-items:flex-start;
+            justify-content:space-between;
+            gap:24px;
+            padding:20px 22px;
+            border-top:4px solid var(--brand);
+        }
+        .studio-eyebrow {
+            margin-bottom:5px;
+            color:var(--brand);
+            font-size:12px;
+            font-weight:700;
+            letter-spacing:.08em;
+            text-transform:uppercase;
+        }
+        .studio-hero h1 {
+            margin:0 0 7px;
+            font-size:25px;
+            line-height:1.25;
+        }
+        .studio-muted {
+            color:var(--muted);
+            line-height:1.65;
+        }
+        .studio-actions {
+            display:flex;
+            flex:0 0 auto;
+            align-items:center;
+            gap:9px;
+        }
+        .status-pill,
+        .tag {
+            display:inline-flex;
+            align-items:center;
+            gap:5px;
+            max-width:100%;
+            padding:4px 9px;
+            border:1px solid #cfd6df;
+            color:#344054;
+            background:#f8fafc;
+            overflow-wrap:anywhere;
+        }
+        .status-pill.success,
+        .tag.success {
+            border-color:#9bd6ba;
+            color:var(--success);
+            background:var(--success-soft);
+        }
+        .status-pill.warning,
+        .tag.warning {
+            border-color:#efc27a;
+            color:var(--warning);
+            background:var(--warning-soft);
+        }
+        .status-pill.danger,
+        .tag.danger {
+            border-color:#f1aaa5;
+            color:var(--danger);
+            background:var(--danger-soft);
+        }
+        .context-grid {
+            display:grid;
+            grid-template-columns:1.1fr 1fr 1.4fr 1.1fr;
+            gap:0;
+        }
+        .context-item {
+            min-width:0;
+            padding:15px 17px;
+            border-right:1px solid var(--line);
+        }
+        .context-item:last-child {
+            border-right:0;
+        }
+        .context-label {
+            display:block;
+            margin-bottom:6px;
+            color:var(--muted);
+            font-size:12px;
+        }
+        .context-value {
+            display:block;
+            color:#101828;
+            font-size:15px;
+            font-weight:600;
+            overflow-wrap:anywhere;
+        }
+        .context-detail {
+            margin-top:5px;
+            color:var(--muted);
+            font-size:12px;
+            line-height:1.5;
+            overflow-wrap:anywhere;
+        }
+        .studio-shell {
+            display:grid;
+            grid-template-columns:220px minmax(0,1fr);
+            align-items:start;
+        }
+        .studio-nav {
+            position:sticky;
+            top:8px;
+            padding:14px;
+            border-right:1px solid var(--line);
+        }
+        .studio-nav button {
+            display:block;
+            width:100%;
+            margin:0 0 7px;
+            padding:11px 12px;
+            border:1px solid transparent;
+            color:#344054;
+            background:transparent;
+            text-align:left;
+            cursor:pointer;
+        }
+        .studio-nav button:hover,
+        .studio-nav button.active {
+            border-color:#a5d7cf;
+            color:#006d63;
+            background:var(--brand-soft);
+        }
+        .guardrail {
+            margin-top:15px;
+            padding:11px;
+            border:1px solid #b9d8d2;
+            color:#075e54;
+            background:#f1fbf8;
+            font-size:12px;
+            line-height:1.65;
+        }
+        .studio-main {
+            min-width:0;
+            padding:20px;
+        }
+        .studio-view {
+            display:none;
+        }
+        .studio-view.active {
+            display:block;
+        }
+        .section-head {
+            display:flex;
+            align-items:flex-start;
+            justify-content:space-between;
+            gap:18px;
+            margin-bottom:14px;
+        }
+        .section-head h2 {
+            margin:0 0 5px;
+            font-size:20px;
+        }
+        .diagnosis {
+            display:grid;
+            grid-template-columns:34px minmax(0,1fr);
+            gap:12px;
+            margin-bottom:14px;
+            padding:15px;
+            border:1px solid #efc27a;
+            background:var(--warning-soft);
+        }
+        .diagnosis.danger {
+            border-color:#f1aaa5;
+            background:var(--danger-soft);
+        }
+        .diagnosis.success {
+            border-color:#9bd6ba;
+            background:var(--success-soft);
+        }
+        .diagnosis-icon {
+            display:flex;
+            width:30px;
+            height:30px;
+            align-items:center;
+            justify-content:center;
+            border-radius:50%;
+            color:#fff;
+            background:#c4770a;
+            font-weight:700;
+        }
+        .diagnosis.danger .diagnosis-icon { background:var(--danger); }
+        .diagnosis.success .diagnosis-icon { background:var(--success); }
+        .diagnosis h3 {
+            margin:0 0 5px;
+            font-size:16px;
+        }
+        .diagnosis p {
+            margin:3px 0;
+            line-height:1.6;
+        }
+        .summary-grid {
+            display:grid;
+            grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:11px;
+            margin-bottom:14px;
+        }
+        .summary-card {
+            min-width:0;
+            padding:14px;
+            border:1px solid var(--line);
+            background:#fcfcfd;
+        }
+        .summary-card h3 {
+            margin:0 0 10px;
+            font-size:15px;
+        }
+        .summary-card strong {
+            display:block;
+            margin-bottom:5px;
+            font-size:20px;
+        }
+        .summary-card p {
+            margin:4px 0 0;
+            color:var(--muted);
+            line-height:1.55;
+        }
+        .workflow-preview {
+            border:1px solid var(--line);
+            background:#fff;
+        }
+        .workflow-preview-head {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            padding:12px 14px;
+            border-bottom:1px solid var(--line);
+            background:#f8fafc;
+        }
+        .step-list {
+            margin:0;
+            padding:0;
+            list-style:none;
+        }
+        .step-row {
+            display:grid;
+            grid-template-columns:34px minmax(150px,.8fr) 86px minmax(240px,1.5fr);
+            gap:10px;
+            align-items:start;
+            padding:11px 14px;
+            border-top:1px solid #edf0f3;
+        }
+        .step-row:first-child { border-top:0; }
+        .step-no {
+            display:flex;
+            width:26px;
+            height:26px;
+            align-items:center;
+            justify-content:center;
+            border-radius:50%;
+            color:#fff;
+            background:var(--brand);
+            font-size:12px;
+            font-weight:700;
+        }
+        .step-row code {
+            color:#344054;
+            white-space:normal;
+            overflow-wrap:anywhere;
+        }
+        .cta-row {
+            display:flex;
+            align-items:center;
+            justify-content:flex-end;
+            gap:9px;
+            margin-top:14px;
+        }
+        .notice {
+            margin-bottom:14px;
+            padding:12px 14px;
+            border:1px solid #9bd6ba;
+            color:var(--success);
+            background:var(--success-soft);
+        }
+        .notice.error {
+            border-color:#f1aaa5;
+            color:var(--danger);
+            background:var(--danger-soft);
+        }
+        .editor-modes {
+            display:grid;
+            grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:10px;
+            margin-bottom:15px;
+        }
+        .editor-mode {
+            position:relative;
+            display:block;
+            min-height:96px;
+            padding:13px 38px 13px 13px;
+            border:2px solid var(--line);
+            background:#fff;
+            cursor:pointer;
+        }
+        .editor-mode:hover,
+        .editor-mode.selected {
+            border-color:var(--brand);
+            background:var(--brand-soft);
+        }
+        .editor-mode input {
+            position:absolute;
+            top:13px;
+            right:13px;
+        }
+        .editor-mode strong {
+            display:block;
+            margin-bottom:6px;
+        }
+        .editor-panel {
+            display:none;
+        }
+        .editor-panel.active {
+            display:block;
+        }
+        .form-section {
+            margin-top:13px;
+            padding:15px;
+            border:1px solid var(--line);
+            background:#fcfcfd;
+        }
+        .form-section h3 {
+            margin:0 0 4px;
+            font-size:16px;
+        }
+        .form-grid {
+            display:grid;
+            grid-template-columns:repeat(2,minmax(0,1fr));
+            gap:11px;
+            margin-top:12px;
+        }
+        .form-field {
+            min-width:0;
+        }
+        .form-field.wide {
+            grid-column:1 / -1;
+        }
+        .form-field label,
+        .field-label {
+            display:block;
+            margin-bottom:5px;
+            color:#344054;
+            font-weight:600;
+        }
+        .form-field small {
+            display:block;
+            margin-top:5px;
+            color:var(--muted);
+            line-height:1.5;
+        }
+        .form-field textarea {
+            min-height:88px;
+            resize:vertical;
+            font-family:Consolas, "Courier New", monospace;
+        }
+        .flow-toolbar {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            margin:12px 0 9px;
+        }
+        .flow-toolbar-actions {
+            display:flex;
+            gap:7px;
+        }
+        .recipe-step {
+            margin-bottom:9px;
+            border:1px solid var(--line);
+            background:#fff;
+        }
+        .recipe-step-head {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            padding:10px 12px;
+            border-bottom:1px solid var(--line);
+            background:#f8fafc;
+        }
+        .recipe-step-title {
+            display:flex;
+            align-items:center;
+            gap:8px;
+            min-width:0;
+        }
+        .recipe-step-body {
+            padding:12px;
+        }
+        .recipe-step-actions {
+            display:flex;
+            gap:5px;
+        }
+        .mini-btn {
+            padding:4px 8px;
+            border:1px solid #cfd6df;
+            color:#344054;
+            background:#fff;
+            cursor:pointer;
+        }
+        .mini-btn.danger {
+            border-color:#f1aaa5;
+            color:var(--danger);
+        }
+        .editor-error {
+            display:none;
+            margin-top:10px;
+            padding:10px 12px;
+            border:1px solid #f1aaa5;
+            color:var(--danger);
+            background:var(--danger-soft);
+        }
+        .editor-error.visible {
+            display:block;
+        }
+        .preflight-strip {
+            display:grid;
+            grid-template-columns:repeat(4,minmax(0,1fr));
+            gap:8px;
+            margin-top:12px;
+        }
+        .preflight-item {
+            padding:9px 10px;
+            border:1px solid var(--line);
+            background:#fff;
+        }
+        .preflight-item span {
+            display:block;
+            color:var(--muted);
+            font-size:11px;
+        }
+        .preflight-item strong {
+            display:block;
+            margin-top:3px;
+            overflow-wrap:anywhere;
+        }
+        .submit-bar {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:14px;
+            margin-top:15px;
+            padding:13px;
+            border:1px solid #b9d8d2;
+            background:#f1fbf8;
+        }
+        .submit-actions {
+            display:flex;
+            flex:0 0 auto;
+            gap:8px;
+        }
+        .candidate {
+            margin-bottom:10px;
+            border:1px solid var(--line);
+            background:#fff;
+        }
+        .candidate.failed { border-color:#f1aaa5; }
+        .candidate.activated { border-color:#9bd6ba; }
+        .candidate-head {
+            display:flex;
+            align-items:flex-start;
+            justify-content:space-between;
+            gap:12px;
+            padding:13px 14px;
+            border-bottom:1px solid var(--line);
+            background:#fcfcfd;
+        }
+        .candidate-body {
+            padding:12px 14px;
+        }
+        .candidate-meta {
+            margin-top:5px;
+            color:var(--muted);
+            line-height:1.6;
+        }
+        .technical-details {
+            margin-top:10px;
+            padding-top:9px;
+            border-top:1px dashed #d0d5dd;
+        }
+        .technical-details summary {
+            color:#475467;
+            cursor:pointer;
+        }
+        .empty {
+            padding:24px;
+            border:1px dashed #cfd6df;
+            color:var(--muted);
+            text-align:center;
+        }
+        @media (max-width:1100px) {
+            .context-grid,
+            .summary-grid,
+            .preflight-strip {
+                grid-template-columns:repeat(2,minmax(0,1fr));
+            }
+            .context-item:nth-child(2) { border-right:0; }
+            .context-item:nth-child(-n+2) { border-bottom:1px solid var(--line); }
+        }
+        @media (max-width:820px) {
+            .studio-hero,
+            .section-head,
+            .submit-bar {
+                display:block;
+            }
+            .studio-actions,
+            .submit-actions {
+                margin-top:10px;
+                width:100%;
+            }
+            .studio-shell {
+                grid-template-columns:1fr;
+            }
+            .studio-nav {
+                position:static;
+                display:flex;
+                gap:7px;
+                overflow:auto;
+                border-right:0;
+                border-bottom:1px solid var(--line);
+            }
+            .studio-nav button {
+                min-width:120px;
+                margin:0;
+            }
+            .guardrail { display:none; }
+            .editor-modes,
+            .form-grid {
+                grid-template-columns:1fr;
+            }
+            .form-field.wide { grid-column:auto; }
+            .step-row {
+                grid-template-columns:32px minmax(0,1fr);
+            }
+            .step-row > :nth-child(3),
+            .step-row > :nth-child(4) {
+                grid-column:2;
+            }
+        }
+        @media (max-width:560px) {
+            .context-grid,
+            .summary-grid,
+            .preflight-strip {
+                grid-template-columns:1fr;
+            }
+            .context-item {
+                border-right:0;
+                border-bottom:1px solid var(--line);
+            }
+            .context-item:last-child { border-bottom:0; }
+            .studio-main { padding:14px; }
+            .submit-actions { display:block; }
+            .submit-actions .layui-btn {
+                width:100%;
+                margin:5px 0 0;
+            }
+        }
+    </style>
+
+    {% if notice %}
+        <div class="notice {% if notice.level == 'error' %}error{% endif %}">
+            {{ notice.text }}
+        </div>
+    {% endif %}
+
+    <header class="studio-card studio-hero">
+        <div>
+            <div class="studio-eyebrow">Authentication Realm</div>
+            <h1>认证工作台</h1>
+            <div class="studio-muted">
+                先理解故障和缺失项，再创建不可变候选。保存候选不请求网络，只有显式验证才访问认证地址。
+            </div>
+        </div>
+        <div class="studio-actions">
+            <span class="status-pill {% if current_status == 'healthy' %}success{% elif current_status in ['failed','interactive_required','degraded'] %}danger{% else %}warning{% endif %}">
+                当前版本：{{ current_status }}
+            </span>
+            <a class="layui-btn layui-btn-primary" href="{{ back_url }}">返回项目环境与认证</a>
+        </div>
+    </header>
+
+    <section class="studio-card context-grid" aria-label="当前上下文">
+        <div class="context-item">
+            <span class="context-label">项目 / 环境</span>
+            <span class="context-value">{{ project.name if project else project_id }}</span>
+            <div class="context-detail">{{ environment.name if environment and environment.name else env_id }}</div>
+        </div>
+        <div class="context-item">
+            <span class="context-label">测试账号</span>
+            <span class="context-value">
+                {{ account_binding.display_name if account_binding and account_binding.display_name else revision.project_account_key }}
+            </span>
+            <div class="context-detail">
+                别名 {{ revision.project_account_key }}
+                {% if test_account and test_account.username %} · {{ test_account.username }}{% endif %}
+            </div>
+        </div>
+        <div class="context-item">
+            <span class="context-label">允许的业务 Host</span>
+            <span class="context-value">{{ workflow_summary.business_origins|length }} 个</span>
+            <div class="context-detail">
+                {{ workflow_summary.business_origins|join('、') if workflow_summary.business_origins else '尚未配置' }}
+            </div>
+        </div>
+        <div class="context-item">
+            <span class="context-label">当前认证流程</span>
+            <span class="context-value">
+                {{ workflow_summary.request_step_count }} 次认证请求
+            </span>
+            <div class="context-detail">
+                {{ workflow_summary.transform_step_count }} 个本地变换 · 输出 {{ workflow_summary.output_kind }}
+            </div>
+        </div>
+    </section>
+
+    <section class="studio-card studio-shell">
+        <aside class="studio-nav" aria-label="认证工作台导航">
+            <button type="button" class="active" data-studio-tab="overview">1. 诊断与下一步</button>
+            <button type="button" data-studio-tab="configure">2. 配置候选方案</button>
+            <button type="button" data-studio-tab="history">3. 候选与验证记录</button>
+            <div class="guardrail">
+                <strong>执行边界</strong><br>
+                候选失败不会覆盖当前版本；验证仅访问认证 Origin，不调用业务接口，也不回显凭据、Token 或 Cookie。
+            </div>
+        </aside>
+
+        <main class="studio-main">
+            <section class="studio-view active" data-studio-view="overview">
+                <div class="section-head">
+                    <div>
+                        <h2>系统判断</h2>
+                        <div class="studio-muted">把故障、已有配置和缺失项整理成一个可执行的下一步。</div>
+                    </div>
+                </div>
+
+                <div class="diagnosis {{ diagnosis.tone }}">
+                    <div class="diagnosis-icon">{% if diagnosis.tone == 'success' %}✓{% else %}!{% endif %}</div>
+                    <div>
+                        <h3>{{ diagnosis.title }}</h3>
+                        <p>{{ diagnosis.summary }}</p>
+                        <p><strong>建议：</strong>{{ diagnosis.action }}</p>
+                    </div>
+                </div>
+
+                <div class="summary-grid">
+                    <article class="summary-card">
+                        <h3>当前流程</h3>
+                        <strong>{{ workflow_summary.step_count }} 步</strong>
+                        <p>{{ workflow_summary.request_step_count }} 次 HTTP 认证请求，{{ workflow_summary.transform_step_count }} 个本地变量处理。</p>
+                    </article>
+                    <article class="summary-card">
+                        <h3>Realm 共享配置</h3>
+                        <strong>{{ current_secret_keys|length }} / {{ required_secret_keys|length }}</strong>
+                        <p>
+                            {% if missing_secret_keys %}
+                                缺少 {{ missing_secret_keys|join('、') }}
+                            {% elif required_secret_keys %}
+                                当前 Recipe 所需键名均已配置。
+                            {% else %}
+                                当前 Recipe 不依赖 Realm 共享秘密。
+                            {% endif %}
+                        </p>
+                    </article>
+                    <article class="summary-card">
+                        <h3>验证影响</h3>
+                        <strong>0 个业务请求</strong>
+                        <p>候选验证最多发送 {{ defaults.get('max_requests', 3) }} 次认证请求，失败时当前版本保持不变。</p>
+                    </article>
+                </div>
+
+                <div class="workflow-preview">
+                    <div class="workflow-preview-head">
+                        <strong>当前生效 Recipe</strong>
+                        <span class="tag">{{ workflow_summary.template or '声明式 Recipe' }}</span>
+                    </div>
+                    <ol class="step-list">
+                        {% for step in current_steps %}
+                            <li class="step-row">
+                                <span class="step-no">{{ loop.index }}</span>
+                                <div>
+                                    <strong>{{ step.label }}</strong>
+                                    {% if step.extract_names %}
+                                        <div class="context-detail">提取 {{ step.extract_names|join('、') }}</div>
+                                    {% endif %}
+                                </div>
+                                <span class="tag {% if step.is_request %}warning{% else %}success{% endif %}">{{ step.method }}</span>
+                                <code>{% if step.origin %}{{ step.origin }}{% endif %}{{ step.path }}</code>
+                            </li>
+                        {% else %}
+                            <li class="empty">当前版本没有可读取的认证步骤。</li>
+                        {% endfor %}
+                    </ol>
+                </div>
+
+                <div class="cta-row">
+                    <button type="button" class="layui-btn" data-open-studio-tab="configure">配置候选方案</button>
+                    <button type="button" class="layui-btn layui-btn-primary" data-open-studio-tab="history">查看版本记录</button>
+                </div>
+
+                <details class="technical-details">
+                    <summary>技术详情：不可变版本与认证 Origin</summary>
+                    <div class="context-detail">
+                        Profile Revision：{{ revision.profile_revision_id }}<br>
+                        Realm Revision：{{ realm_revision.realm_revision_id }}<br>
+                        Adapter Version：{{ adapter_version.adapter_version_id }}<br>
+                        认证 Origin：{{ workflow_summary.auth_origins|join('、') if workflow_summary.auth_origins else '无' }}
+                    </div>
+                </details>
+            </section>
+
+            {% if can_manage %}
+            <section class="studio-view" data-studio-view="configure">
+                <div class="section-head">
+                    <div>
+                        <h2>配置候选方案</h2>
+                        <div class="studio-muted">快捷配置、工作流和原始 JSON 使用同一个 Recipe 模型，不存在产品专属页面。</div>
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('web.auth_realm_repair') }}" autocomplete="off" id="auth-workbench-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                    <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                    <input type="hidden" name="resume_run_id" value="{{ resume_run_id }}">
+                    <input type="hidden" name="recipe_mode" id="recipe-mode-field" value="{% if initial_editor_mode == 'quick' %}guided{% elif initial_editor_mode == 'sso_product' %}sso_product{% else %}custom{% endif %}">
+
+                    <div class="editor-modes" role="radiogroup" aria-label="编辑层级">
+                        <label class="editor-mode {% if initial_editor_mode == 'quick' %}selected{% endif %}">
+                            <input type="radio" name="ui_editor_mode" value="quick" {% if initial_editor_mode == 'quick' %}checked{% endif %}>
+                            <strong>快捷配置</strong>
+                            <div class="studio-muted">一次账号密码请求，提取 Token 或 Cookie。</div>
+                        </label>
+                        <label class="editor-mode {% if initial_editor_mode == 'sso_product' %}selected{% endif %}">
+                            <input type="radio" name="ui_editor_mode" value="sso_product" {% if initial_editor_mode == 'sso_product' %}checked{% endif %}>
+                            <strong>SSO + 产品 Token</strong>
+                            <div class="studio-muted">登录、建立 Session，再换取最终业务 Token。</div>
+                        </label>
+                        <label class="editor-mode {% if initial_editor_mode == 'workflow' %}selected{% endif %}">
+                            <input type="radio" name="ui_editor_mode" value="workflow" {% if initial_editor_mode == 'workflow' %}checked{% endif %}>
+                            <strong>工作流编辑</strong>
+                            <div class="studio-muted">组合变量变换、多个 HTTP 请求和结果提取。</div>
+                        </label>
+                        <label class="editor-mode">
+                            <input type="radio" name="ui_editor_mode" value="raw">
+                            <strong>原始 Recipe</strong>
+                            <div class="studio-muted">专家直接编辑受限声明式 JSON。</div>
+                        </label>
+                    </div>
+
+                    <div class="editor-panel {% if initial_editor_mode == 'quick' %}active{% endif %}" data-editor-panel="quick">
+                        <div class="form-section">
+                            <h3>登录请求</h3>
+                            <div class="studio-muted">账号和密码来自上方已绑定测试账号，本页只描述协议。</div>
+                            <div class="form-grid">
+                                <div class="form-field wide">
+                                    <label>登录 URL</label>
+                                    <input class="layui-input" name="login_url" value="{{ defaults.get('login_url', '') }}" placeholder="https://auth.example.test/login">
+                                </div>
+                                <div class="form-field">
+                                    <label>请求方法</label>
+                                    <select name="login_method">
+                                        {% for method in ['POST', 'GET'] %}
+                                            <option value="{{ method }}" {% if defaults.get('method') == method %}selected{% endif %}>{{ method }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>请求数据格式</label>
+                                    <select name="request_format">
+                                        {% for format in ['json', 'form', 'query'] %}
+                                            <option value="{{ format }}" {% if defaults.get('request_format') == format %}selected{% endif %}>{{ format }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>账号字段名</label>
+                                    <input class="layui-input" name="username_field" value="{{ defaults.get('username_field', 'account') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>密码字段名</label>
+                                    <input class="layui-input" name="password_field" value="{{ defaults.get('password_field', 'password') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>密码变换</label>
+                                    <select name="password_transform">
+                                        {% for transform in ['plain', 'md5', 'sha256', 'base64', 'rsa_pkcs1v15'] %}
+                                            <option value="{{ transform }}" {% if defaults.get('password_transform') == transform %}selected{% endif %}>{{ transform }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>RSA 公钥配置键</label>
+                                    <input class="layui-input" name="rsa_public_key_secret_name" value="{{ defaults.get('rsa_public_key_secret_name', 'login_rsa_public_key') }}">
+                                </div>
+                                <div class="form-field wide">
+                                    <label>RSA 公钥 PEM（留空则复用 Realm 中同名键）</label>
+                                    <textarea class="layui-textarea" name="rsa_public_key" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
+                                </div>
+                                <div class="form-field">
+                                    <label>RSA 明文追加时间戳</label>
+                                    <label class="check-line"><input type="checkbox" name="rsa_append_timestamp" value="1" {% if defaults.get('rsa_append_timestamp') %}checked{% endif %}> password + 分隔符 + timestamp</label>
+                                </div>
+                                <div class="form-field">
+                                    <label>时间戳分隔符</label>
+                                    <input class="layui-input" name="rsa_timestamp_delimiter" value="{{ defaults.get('rsa_timestamp_delimiter', '###') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>时间戳单位</label>
+                                    <select name="rsa_timestamp_unit">
+                                        {% for unit in ['seconds', 'milliseconds'] %}
+                                            <option value="{{ unit }}" {% if defaults.get('rsa_timestamp_unit') == unit %}selected{% endif %}>{{ unit }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>成功状态码</label>
+                                    <input class="layui-input" name="success_statuses" value="{{ defaults.get('success_statuses', '200') }}" placeholder="200,204">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3>认证结果</h3>
+                            <div class="form-grid">
+                                <div class="form-field">
+                                    <label>Token 来源</label>
+                                    <select name="token_source">
+                                        {% for source in ['json', 'header', 'cookie'] %}
+                                            <option value="{{ source }}" {% if defaults.get('token_source') == source %}selected{% endif %}>{{ source }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>Token 路径或名称</label>
+                                    <input class="layui-input" name="token_path" value="{{ defaults.get('token_path', '') }}" placeholder="data.access_token">
+                                </div>
+                                <div class="form-field">
+                                    <label>注入 Header</label>
+                                    <input class="layui-input" name="token_header" value="{{ defaults.get('token_header', 'Authorization') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>Token 前缀</label>
+                                    <input class="layui-input" name="token_prefix" value="{{ defaults.get('token_prefix', 'Bearer') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>输出类型</label>
+                                    <select name="repair_auth_kind">
+                                        {% for kind in ['bearer', 'cookie', 'mixed'] %}
+                                            <option value="{{ kind }}" {% if defaults.get('auth_kind') == kind %}selected{% endif %}>{{ kind }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <label class="form-field">
+                                    <span class="field-label">Session Cookie</span>
+                                    <input type="checkbox" name="include_session_cookies" value="1" {% if defaults.get('include_session_cookies') %}checked{% endif %}>
+                                    同时输出登录 Session Cookie
+                                </label>
+                            </div>
+                            <details class="technical-details">
+                                <summary>快捷配置的高级协议字段</summary>
+                                <div class="form-grid">
+                                    <div class="form-field">
+                                        <label>错误字段 JSON 路径</label>
+                                        <input class="layui-input" name="error_json_path" value="{{ defaults.get('error_json_path', '') }}" placeholder="error.code">
+                                    </div>
+                                    <div class="form-field wide">
+                                        <label>附加公开协议字段 JSON</label>
+                                        <textarea class="layui-textarea" name="extra_fields_json">{{ defaults.get('extra_fields_json', '{}') }}</textarea>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+
+                    <div class="editor-panel {% if initial_editor_mode == 'sso_product' %}active{% endif %}" data-editor-panel="sso_product">
+                        <div class="form-section">
+                            <h3>三阶段认证端点</h3>
+                            <div class="studio-muted">三个认证请求共享同一个 Cookie Jar；最终业务上下文只输出产品 Token 和 Session Cookie。</div>
+                            <div class="form-grid">
+                                <div class="form-field wide">
+                                    <label>SSO authorization URL</label>
+                                    <input class="layui-input" name="sso_authorization_url" value="{{ defaults.get('sso_authorization_url', '') }}" placeholder="https://auth.example.test/authorization">
+                                </div>
+                                <div class="form-field wide">
+                                    <label>Token-login URL</label>
+                                    <input class="layui-input" name="token_login_url" value="{{ defaults.get('token_login_url', '') }}" placeholder="https://login.example.test/login/token-login">
+                                </div>
+                                <div class="form-field wide">
+                                    <label>Product-verification URL</label>
+                                    <input class="layui-input" name="product_verification_url" value="{{ defaults.get('product_verification_url', '') }}" placeholder="https://api.example.test/product/verification">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-section">
+                            <h3>Token 交换协议</h3>
+                            <div class="form-grid">
+                                <div class="form-field">
+                                    <label>Realm Client Token 键名</label>
+                                    <input class="layui-input" name="client_token_secret_name" value="{{ defaults.get('client_token_secret_name', 'client_token') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>SSO Token JSON 路径</label>
+                                    <input class="layui-input" name="sso_token_path" value="{{ defaults.get('sso_token_path', 'access_token') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>产品 Token JSON 路径</label>
+                                    <input class="layui-input" name="product_token_path" value="{{ defaults.get('product_token_path', 'access_token') }}">
+                                </div>
+                                <div class="form-field">
+                                    <label>浏览器类型</label>
+                                    <input class="layui-input" name="browser_type" value="{{ defaults.get('browser_type', 'chrome') }}">
+                                </div>
+                                <div class="form-field wide">
+                                    <label>浏览器身份</label>
+                                    <input class="layui-input" name="browser_id" value="{{ defaults.get('browser_id', '') }}" placeholder="由登录控制台或 Apifox 环境提供的 browserid">
+                                </div>
+                            </div>
+                            <div class="preflight-strip">
+                                <div class="preflight-item"><span>阶段 1</span><strong>SSO Token</strong></div>
+                                <div class="preflight-item"><span>阶段 2</span><strong>Session Cookie</strong></div>
+                                <div class="preflight-item"><span>阶段 3</span><strong>产品 Token</strong></div>
+                                <div class="preflight-item"><span>业务请求</span><strong>只使用阶段 3</strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-panel {% if initial_editor_mode == 'workflow' %}active{% endif %}" data-editor-panel="workflow">
+                        <div class="flow-toolbar">
+                            <div>
+                                <strong>认证步骤</strong>
+                                <div class="studio-muted">本地变换不发送请求；HTTP 步骤按顺序共享 Cookie Jar 和已提取变量。</div>
+                            </div>
+                            <div class="flow-toolbar-actions">
+                                <button type="button" class="mini-btn" id="add-set-step">+ 变量变换</button>
+                                <button type="button" class="mini-btn" id="add-http-step">+ HTTP 请求</button>
+                                <button type="button" class="mini-btn" id="add-mfa-step">+ 二验接收器</button>
+                            </div>
+                        </div>
+                        <div id="workflow-steps"></div>
+
+                        <div class="form-section">
+                            <h3>输出认证上下文</h3>
+                            <div class="form-grid">
+                                <div class="form-field">
+                                    <label>输出类型</label>
+                                    <select id="workflow-output-kind">
+                                        {% for kind in ['bearer', 'cookie', 'mixed'] %}
+                                            <option value="{{ kind }}">{{ kind }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <label class="form-field">
+                                    <span class="field-label">Session Cookie</span>
+                                    <input type="checkbox" id="workflow-session-cookies">
+                                    合并工作流 Cookie Jar
+                                </label>
+                                <div class="form-field wide">
+                                    <label>输出 Header JSON</label>
+                                    <textarea class="layui-textarea" id="workflow-output-headers" placeholder='{"Authorization":"Bearer {% raw %}{{vars.access_token}}{% endraw %}"}'></textarea>
+                                </div>
+                                <div class="form-field wide">
+                                    <label>输出 Cookie JSON</label>
+                                    <textarea class="layui-textarea" id="workflow-output-cookies" placeholder='{}'></textarea>
+                                </div>
+                                <div class="form-field">
+                                    <label>有效期（秒）</label>
+                                    <input class="layui-input" type="number" min="60" max="86400" id="workflow-output-expiry">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-panel" data-editor-panel="raw">
+                        <div class="form-section">
+                            <h3>原始声明式 Recipe</h3>
+                            <div class="studio-muted">只支持受限 set/http/mfa_receive 步骤；不会执行 Python、JavaScript 或 Shell。</div>
+                            <div class="form-grid">
+                                <div class="form-field wide">
+                                    <label>Recipe JSON</label>
+                                    <textarea class="layui-textarea" name="recipe_json" id="recipe-json-field" style="min-height:420px">{{ defaults.get('recipe_json', '') }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>Realm 共享配置</h3>
+                        <div class="studio-muted">
+                            Recipe 使用 <code>{% raw %}{{secret.key}}{% endraw %}</code> 引用。当前只显示键名：
+                            {{ current_secret_keys|join('、') if current_secret_keys else '无' }}。
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-field wide">
+                                <label>新增或更新共享秘密 JSON</label>
+                                <textarea class="layui-textarea" name="realm_secret_json" autocomplete="off" placeholder='{"client_secret":"仅在保存时填写"}'></textarea>
+                                <small>默认与当前版本合并，页面和验证记录均不会回显秘密值。</small>
+                            </div>
+                            <label class="form-field wide">
+                                <input type="checkbox" name="replace_realm_secrets" value="1">
+                                完整替换当前共享秘密版本（未填写的旧键会被移除）
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>版本说明与验证边界</h3>
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label>无明确过期时间时的有效期（秒）</label>
+                                <input class="layui-input" type="number" min="60" max="86400" name="max_age_seconds" value="{{ defaults.get('max_age_seconds', 1800) }}">
+                            </div>
+                            <div class="form-field">
+                                <label>本次最多认证请求</label>
+                                <input class="layui-input" type="number" min="1" max="6" name="max_requests" id="max-requests-field" value="{{ defaults.get('max_requests', 3) }}">
+                            </div>
+                            <div class="form-field wide">
+                                <label>候选说明</label>
+                                <input class="layui-input" name="repair_reason" value="认证协议候选更新" placeholder="说明为什么创建此候选">
+                            </div>
+                            <label class="form-field wide">
+                                <input type="checkbox" name="tls_verify" value="1" {% if defaults.get('tls_verify', true) %}checked{% endif %}>
+                                严格校验 TLS 证书
+                            </label>
+                        </div>
+                        <div class="preflight-strip">
+                            <div class="preflight-item">
+                                <span>编辑方式</span>
+                                <strong id="preflight-mode">快捷配置</strong>
+                            </div>
+                            <div class="preflight-item">
+                                <span>认证 HTTP 步骤</span>
+                                <strong id="preflight-http-count">{{ workflow_summary.request_step_count }}</strong>
+                            </div>
+                            <div class="preflight-item">
+                                <span>认证 Origin</span>
+                                <strong id="preflight-origin-count">{{ workflow_summary.auth_origins|length }} 个</strong>
+                            </div>
+                            <div class="preflight-item">
+                                <span>业务请求</span>
+                                <strong>0 个</strong>
+                            </div>
+                        </div>
+                        <div class="editor-error" id="editor-error"></div>
+                    </div>
+
+                    <div class="submit-bar">
+                        <div>
+                            <strong>先保存，再决定是否发送认证请求</strong>
+                            <div class="studio-muted">保存只创建不可变候选；验证成功后才切换当前版本。</div>
+                        </div>
+                        <div class="submit-actions">
+                            <button class="layui-btn layui-btn-primary" type="submit" name="action" value="create_auth_repair_candidate">
+                                保存候选（0 请求）
+                            </button>
+                            <button class="layui-btn" type="submit" name="action" value="create_validate_auth_repair" id="save-validate-button">
+                                保存并验证（最多 {{ defaults.get('max_requests', 3) }} 次认证请求）
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </section>
+            {% else %}
+            <section class="studio-view" data-studio-view="configure">
+                <div class="empty">当前账号只有查看权限，不能创建或验证认证候选。</div>
+            </section>
+            {% endif %}
+
+            <section class="studio-view" data-studio-view="history">
+                <div class="section-head">
+                    <div>
+                        <h2>候选与验证记录</h2>
+                        <div class="studio-muted">失败候选不会覆盖当前版本；验证动作和认证请求数单独记录。</div>
+                    </div>
+                    <span class="tag">{{ candidates|length }} 个候选</span>
+                </div>
+
+                {% for row in candidates %}
+                    {% set candidate = row.candidate %}
+                    <article class="candidate {{ candidate.status }}">
+                        <div class="candidate-head">
+                            <div>
+                                <strong>{{ candidate.reason or '认证候选' }}</strong>
+                                <div class="candidate-meta">
+                                    {{ row.steps|selectattr('is_request')|list|length }} 次认证请求 ·
+                                    {{ row.steps|length }} 个步骤 ·
+                                    创建于 {{ candidate.ctime }}
+                                </div>
+                            </div>
+                            <span class="status-pill {% if candidate.status == 'activated' %}success{% elif candidate.status == 'failed' %}danger{% else %}warning{% endif %}">
+                                {% if candidate.status == 'activated' %}已验证并生效
+                                {% elif candidate.status == 'failed' %}验证失败
+                                {% elif candidate.status == 'validating' %}验证中
+                                {% elif candidate.status == 'stale' %}已过时
+                                {% else %}草稿 · 未发送请求{% endif %}
+                            </span>
+                        </div>
+                        <div class="candidate-body">
+                            <ol class="step-list">
+                                {% for step in row.steps %}
+                                    <li class="step-row">
+                                        <span class="step-no">{{ loop.index }}</span>
+                                        <strong>{{ step.label }}</strong>
+                                        <span class="tag">{{ step.method }}</span>
+                                        <code>{% if step.origin %}{{ step.origin }}{% endif %}{{ step.path }}</code>
+                                    </li>
+                                {% endfor %}
+                            </ol>
+                            {% if row.attempt %}
+                                <div class="diagnosis {% if row.attempt.status == 'succeeded' %}success{% else %}danger{% endif %}" style="margin:12px 0 0">
+                                    <div class="diagnosis-icon">{% if row.attempt.status == 'succeeded' %}✓{% else %}!{% endif %}</div>
+                                    <div>
+                                        <h3>{{ row.attempt.status }} · 阶段 {{ row.attempt.stage }}</h3>
+                                        <p>{{ row.attempt.request_count }} / {{ row.attempt.max_requests }} 次认证请求{% if row.attempt.error_code %} · {{ row.attempt.error_code }}{% endif %}</p>
+                                    </div>
+                                </div>
+                            {% endif %}
+                            {% if can_manage and candidate.status in ['draft', 'failed'] and candidate.previous_profile_revision_id == profile.current_revision_id %}
+                                <form method="POST" action="{{ url_for('web.auth_realm_repair') }}" class="cta-row">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="validate_auth_repair_candidate">
+                                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                                    <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                                    <input type="hidden" name="repair_candidate_id" value="{{ candidate.candidate_id }}">
+                                    <input type="hidden" name="resume_run_id" value="{{ resume_run_id }}">
+                                    <input type="hidden" name="max_requests" value="{{ row.request_floor }}">
+                                    <button class="layui-btn" type="submit">验证候选（最多 {{ row.request_floor }} 次认证请求）</button>
+                                </form>
+                            {% endif %}
+                            <details class="technical-details">
+                                <summary>技术版本信息</summary>
+                                <div class="context-detail">
+                                    Candidate：{{ candidate.candidate_id }}<br>
+                                    基于：{{ candidate.previous_profile_revision_id }}<br>
+                                    候选 Profile：{{ candidate.candidate_profile_revision_id }}<br>
+                                    Realm 共享键名：{{ row.secret_keys|join('、') if row.secret_keys else '无' }}
+                                </div>
+                            </details>
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="empty">还没有候选版本。先在“配置候选方案”中保存一个零请求候选。</div>
+                {% endfor %}
+            </section>
+        </main>
+    </section>
+</div>
+
+<script type="application/json" id="initial-auth-recipe">{{ current_recipe|tojson }}</script>
+<script>
+(function () {
+    "use strict";
+
+    var tabButtons = Array.prototype.slice.call(
+        document.querySelectorAll("[data-studio-tab]")
+    );
+    var tabViews = Array.prototype.slice.call(
+        document.querySelectorAll("[data-studio-view]")
+    );
+
+    function openStudioTab(name) {
+        tabButtons.forEach(function (button) {
+            button.classList.toggle(
+                "active", button.getAttribute("data-studio-tab") === name
+            );
+        });
+        tabViews.forEach(function (view) {
+            view.classList.toggle(
+                "active", view.getAttribute("data-studio-view") === name
+            );
+        });
+    }
+
+    tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            openStudioTab(button.getAttribute("data-studio-tab"));
+        });
+    });
+    Array.prototype.slice.call(
+        document.querySelectorAll("[data-open-studio-tab]")
+    ).forEach(function (button) {
+        button.addEventListener("click", function () {
+            openStudioTab(button.getAttribute("data-open-studio-tab"));
+        });
+    });
+
+    var form = document.getElementById("auth-workbench-form");
+    if (!form) {
+        return;
+    }
+
+    var initialNode = document.getElementById("initial-auth-recipe");
+    var rawField = document.getElementById("recipe-json-field");
+    var recipeModeField = document.getElementById("recipe-mode-field");
+    var stepRoot = document.getElementById("workflow-steps");
+    var errorBox = document.getElementById("editor-error");
+    var outputKind = document.getElementById("workflow-output-kind");
+    var outputHeaders = document.getElementById("workflow-output-headers");
+    var outputCookies = document.getElementById("workflow-output-cookies");
+    var outputSessionCookies = document.getElementById("workflow-session-cookies");
+    var outputExpiry = document.getElementById("workflow-output-expiry");
+    var maxRequestsField = document.getElementById("max-requests-field");
+    var validateButton = document.getElementById("save-validate-button");
+    var currentRecipe = {};
+
+    try {
+        currentRecipe = JSON.parse(initialNode.textContent || "{}");
+    } catch (ignore) {
+        currentRecipe = {};
+    }
+    if (!currentRecipe || !Array.isArray(currentRecipe.steps)) {
+        currentRecipe = {
+            schema_version:1,
+            steps:[],
+            output:{
+                auth_kind:"mixed",
+                headers:{},
+                cookies:{},
+                include_session_cookies:true,
+                expires_in_seconds:1800
+            }
+        };
+    }
+
+    function escapeHtml(value) {
+        return String(value === undefined || value === null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function pretty(value) {
+        return JSON.stringify(value === undefined ? {} : value, null, 2);
+    }
+
+    function parseObject(text, label) {
+        var value;
+        try {
+            value = JSON.parse(String(text || "{}"));
+        } catch (error) {
+            throw new Error(label + "必须是有效 JSON");
+        }
+        if (!value || Array.isArray(value) || typeof value !== "object") {
+            throw new Error(label + "必须是 JSON 对象");
+        }
+        return value;
+    }
+
+    function parseArray(text, label) {
+        var value;
+        try {
+            value = JSON.parse(String(text || "[]"));
+        } catch (error) {
+            throw new Error(label + "必须是有效 JSON 数组");
+        }
+        if (!Array.isArray(value)) {
+            throw new Error(label + "必须是 JSON 数组");
+        }
+        return value;
+    }
+
+    function setEditorError(message) {
+        errorBox.textContent = message || "";
+        errorBox.classList.toggle("visible", Boolean(message));
+    }
+
+    function stepCard(step, index) {
+        var kind = step.type === "set" ? "set" : (step.type === "mfa_receive" ? "mfa_receive" : "http");
+        var isLocal = kind === "set";
+        var kindLabel = isLocal ? "本地" : (kind === "mfa_receive" ? "二验" : escapeHtml(step.method || "POST"));
+        var base = ""
+            + '<article class="recipe-step" data-step-index="' + index + '" data-step-type="' + kind + '">'
+            + '  <div class="recipe-step-head">'
+            + '    <div class="recipe-step-title">'
+            + '      <span class="step-no">' + (index + 1) + '</span>'
+            + '      <strong>' + escapeHtml(step.label || step.id || (kind === "set" ? "变量变换" : (kind === "mfa_receive" ? "二验接收器" : "认证请求"))) + '</strong>'
+            + '      <span class="tag ' + (isLocal ? "success" : "warning") + '">' + kindLabel + '</span>'
+            + '    </div>'
+            + '    <div class="recipe-step-actions">'
+            + '      <button type="button" class="mini-btn" data-step-action="up">上移</button>'
+            + '      <button type="button" class="mini-btn" data-step-action="down">下移</button>'
+            + '      <button type="button" class="mini-btn danger" data-step-action="delete">删除</button>'
+            + '    </div>'
+            + '  </div>'
+            + '  <div class="recipe-step-body"><div class="form-grid">'
+            + '    <div class="form-field"><label>步骤 ID</label><input class="layui-input" data-field="id" value="' + escapeHtml(step.id || "") + '"></div>'
+            + '    <div class="form-field"><label>显示名称</label><input class="layui-input" data-field="label" value="' + escapeHtml(step.label || "") + '"></div>';
+
+        if (kind === "set") {
+            base += ""
+                + '<div class="form-field"><label>输出变量</label><input class="layui-input" data-field="target" value="' + escapeHtml(step.target || "") + '"></div>'
+                + '<div class="form-field"><label>变换操作</label><select data-field="operation">'
+                + ["literal","unix_time","uuid4","concat","md5","sha256","base64","rsa_encrypt"].map(function (name) {
+                    return '<option value="' + name + '"' + (String(step.operation || "literal") === name ? " selected" : "") + '>' + name + '</option>';
+                }).join("")
+                + '</select></div>'
+                + '<div class="form-field wide"><label>输入值 / 模板</label><input class="layui-input" data-field="value" value="' + escapeHtml(step.value === undefined ? "" : step.value) + '" placeholder="{% raw %}{{credential.password}}{% endraw %}"></div>'
+                + '<div class="form-field wide"><label>concat 输入数组 JSON</label><textarea class="layui-textarea" data-field="values">' + escapeHtml(pretty(step.values || [])) + '</textarea></div>'
+                + '<div class="form-field wide"><label>RSA 公钥模板</label><input class="layui-input" data-field="public_key" value="' + escapeHtml(step.public_key || "") + '" placeholder="{% raw %}{{secret.login_rsa_public_key}}{% endraw %}"></div>'
+                + '<div class="form-field"><label>RSA padding</label><select data-field="padding">' + ["pkcs1v15","oaep-sha1","oaep-sha256"].map(function (name) { return '<option value="' + name + '"' + (String(step.padding || "pkcs1v15") === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>'
+                + '<div class="form-field"><label>输出编码</label><select data-field="output_encoding">' + ["base64","hex"].map(function (name) { return '<option value="' + name + '"' + (String(step.output_encoding || "base64") === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>'
+                + '<div class="form-field"><label>Unix 时间单位</label><select data-field="unit">' + ["seconds","milliseconds"].map(function (name) { return '<option value="' + name + '"' + (String(step.unit || "seconds") === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>';
+        } else if (kind === "mfa_receive") {
+            var receiverBodyMode = step.json !== undefined ? "json" : (step.form !== undefined ? "form" : "none");
+            var receiverBody = receiverBodyMode === "json" ? step.json : (receiverBodyMode === "form" ? step.form : {});
+            base += ""
+                + '<div class="form-field"><label>模式</label><select data-field="mode">' + ["pull","push"].map(function (name) { return '<option value="' + name + '"' + (String(step.mode || "pull") === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>'
+                + '<div class="form-field"><label>输出变量</label><input class="layui-input" data-field="target" value="' + escapeHtml(step.target || "mfa_code") + '"></div>'
+                + '<div class="form-field"><label>接收器 ID（push）</label><input class="layui-input" data-field="receiver_id" value="' + escapeHtml(step.receiver_id || "") + '"></div>'
+                + '<div class="form-field"><label>关联值（push）</label><input class="layui-input" data-field="correlation" value="' + escapeHtml(step.correlation || "") + '"></div>'
+                + '<div class="form-field"><label>方法（pull）</label><select data-field="method">' + ["POST","GET"].map(function (name) { return '<option value="' + name + '"' + (String(step.method || "POST").toUpperCase() === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>'
+                + '<div class="form-field"><label>请求体类型</label><select data-field="body_mode">' + ["none","json","form"].map(function (name) { return '<option value="' + name + '"' + (receiverBodyMode === name ? " selected" : "") + '>' + name + '</option>'; }).join("") + '</select></div>'
+                + '<div class="form-field wide"><label>URL（pull）</label><input class="layui-input" data-field="url" value="' + escapeHtml(step.url || "") + '"></div>'
+                + '<div class="form-field wide"><label>Header JSON</label><textarea class="layui-textarea" data-field="headers">' + escapeHtml(pretty(step.headers || {})) + '</textarea></div>'
+                + '<div class="form-field wide"><label>Query JSON</label><textarea class="layui-textarea" data-field="query">' + escapeHtml(pretty(step.query || {})) + '</textarea></div>'
+                + '<div class="form-field wide"><label>请求体 JSON</label><textarea class="layui-textarea" data-field="body">' + escapeHtml(pretty(receiverBody)) + '</textarea></div>'
+                + '<div class="form-field wide"><label>验证码提取规则 JSON</label><textarea class="layui-textarea" data-field="extract">' + escapeHtml(pretty(step.extract || {source:"json",path:"code"})) + '</textarea></div>'
+                + '<div class="form-field"><label>成功状态码</label><input class="layui-input" data-field="success_statuses" value="' + escapeHtml((step.success_statuses || [200]).join(",")) + '"></div>'
+                + '<div class="form-field"><label>最多拉取次数</label><input class="layui-input" type="number" min="1" max="6" data-field="max_attempts" value="' + escapeHtml(step.max_attempts || 1) + '"></div>'
+                + '<div class="form-field"><label>拉取间隔（秒）</label><input class="layui-input" type="number" min="0" max="10" data-field="poll_interval_seconds" value="' + escapeHtml(step.poll_interval_seconds || 0) + '"></div>'
+                + '<div class="form-field"><label>等待超时（秒）</label><input class="layui-input" type="number" min="1" max="300" data-field="timeout_seconds" value="' + escapeHtml(step.timeout_seconds || 60) + '"></div>';
+        } else {
+            var bodyMode = step.json !== undefined ? "json" : (step.form !== undefined ? "form" : "none");
+            var bodyValue = bodyMode === "json" ? step.json : (bodyMode === "form" ? step.form : {});
+            base += ""
+                + '<div class="form-field"><label>方法</label><select data-field="method">'
+                + ["POST","GET"].map(function (name) {
+                    return '<option value="' + name + '"' + (String(step.method || "POST").toUpperCase() === name ? " selected" : "") + '>' + name + '</option>';
+                }).join("")
+                + '</select></div>'
+                + '<div class="form-field"><label>请求体类型</label><select data-field="body_mode">'
+                + ["none","json","form"].map(function (name) {
+                    return '<option value="' + name + '"' + (bodyMode === name ? " selected" : "") + '>' + name + '</option>';
+                }).join("")
+                + '</select></div>'
+                + '<div class="form-field wide"><label>URL</label><input class="layui-input" data-field="url" value="' + escapeHtml(step.url || "") + '" placeholder="https://auth.example.test/login"></div>'
+                + '<div class="form-field wide"><label>Header JSON</label><textarea class="layui-textarea" data-field="headers">' + escapeHtml(pretty(step.headers || {})) + '</textarea></div>'
+                + '<div class="form-field wide"><label>Query JSON</label><textarea class="layui-textarea" data-field="query">' + escapeHtml(pretty(step.query || {})) + '</textarea></div>'
+                + '<div class="form-field wide"><label>请求体 JSON</label><textarea class="layui-textarea" data-field="body">' + escapeHtml(pretty(bodyValue)) + '</textarea></div>'
+                + '<div class="form-field wide"><label>结果提取 JSON</label><textarea class="layui-textarea" data-field="extract">' + escapeHtml(pretty(step.extract || {})) + '</textarea><small>例如：{"access_token":{"source":"json","path":"data.access_token","required":true}}</small></div>'
+                + '<div class="form-field"><label>成功状态码</label><input class="layui-input" data-field="success_statuses" value="' + escapeHtml((step.success_statuses || [200]).join(",")) + '"></div>'
+                + '<label class="form-field"><span class="field-label">跳转</span><input type="checkbox" data-field="follow_redirects"' + (step.follow_redirects ? " checked" : "") + '> 在允许的认证 Origin 内跟随跳转</label>';
+        }
+        return base + "</div></div></article>";
+    }
+
+    function renderWorkflow() {
+        stepRoot.innerHTML = currentRecipe.steps.map(stepCard).join("");
+        var output = currentRecipe.output || {};
+        outputKind.value = output.auth_kind || "mixed";
+        outputHeaders.value = pretty(output.headers || {});
+        outputCookies.value = pretty(output.cookies || {});
+        outputSessionCookies.checked = Boolean(output.include_session_cookies);
+        outputExpiry.value = output.expires_in_seconds || 1800;
+        updatePreflight();
+    }
+
+    function readWorkflow() {
+        var cards = Array.prototype.slice.call(
+            stepRoot.querySelectorAll("[data-step-index]")
+        );
+        var nextSteps = cards.map(function (card) {
+            var index = Number(card.getAttribute("data-step-index"));
+            var type = card.getAttribute("data-step-type");
+            var oldStep = currentRecipe.steps[index] || {};
+            var step = Object.assign({}, oldStep);
+            function value(name) {
+                var node = card.querySelector('[data-field="' + name + '"]');
+                return node ? node.value : "";
+            }
+            step.type = type;
+            step.id = value("id").trim();
+            var label = value("label").trim();
+            if (label) {
+                step.label = label;
+            } else {
+                delete step.label;
+            }
+            if (!step.id) {
+                throw new Error("每个步骤都需要唯一的步骤 ID");
+            }
+            if (type === "set") {
+                step.target = value("target").trim();
+                step.operation = value("operation");
+                step.value = value("value");
+                step.values = parseArray(value("values"), "concat 输入");
+                step.public_key = value("public_key").trim();
+                step.padding = value("padding");
+                step.output_encoding = value("output_encoding");
+                step.unit = value("unit");
+                if (!step.target) {
+                    throw new Error("变量变换步骤需要输出变量名");
+                }
+            } else if (type === "mfa_receive") {
+                step.mode = value("mode");
+                step.target = value("target").trim() || "mfa_code";
+                step.receiver_id = value("receiver_id").trim();
+                step.correlation = value("correlation");
+                step.method = value("method");
+                step.url = value("url").trim();
+                step.headers = parseObject(value("headers"), "Header");
+                step.query = parseObject(value("query"), "Query");
+                step.extract = parseObject(value("extract"), "验证码提取规则");
+                step.success_statuses = value("success_statuses").split(",").map(function (item) { return Number(item.trim()); }).filter(function (item) { return item >= 100 && item <= 599; });
+                step.max_attempts = Number(value("max_attempts") || 1);
+                step.poll_interval_seconds = Number(value("poll_interval_seconds") || 0);
+                step.timeout_seconds = Number(value("timeout_seconds") || 60);
+                var receiverBodyMode = value("body_mode");
+                delete step.json;
+                delete step.form;
+                if (receiverBodyMode !== "none") {
+                    step[receiverBodyMode] = parseObject(value("body"), "请求体");
+                }
+                if (step.mode === "push") {
+                    delete step.url;
+                    delete step.method;
+                    delete step.headers;
+                    delete step.query;
+                    delete step.json;
+                    delete step.form;
+                    if (!step.receiver_id) {
+                        throw new Error("push 二验接收器需要 receiver_id");
+                    }
+                } else if (!step.url) {
+                    throw new Error("pull 二验接收器需要完整 URL");
+                }
+            } else {
+                step.method = value("method");
+                step.url = value("url").trim();
+                step.headers = parseObject(value("headers"), "Header");
+                step.query = parseObject(value("query"), "Query");
+                step.extract = parseObject(value("extract"), "结果提取");
+                step.success_statuses = value("success_statuses")
+                    .split(",")
+                    .map(function (item) { return Number(item.trim()); })
+                    .filter(function (item) { return item >= 100 && item <= 599; });
+                if (!step.success_statuses.length) {
+                    step.success_statuses = [200];
+                }
+                var bodyMode = value("body_mode");
+                delete step.json;
+                delete step.form;
+                if (bodyMode !== "none") {
+                    step[bodyMode] = parseObject(value("body"), "请求体");
+                }
+                var redirectNode = card.querySelector('[data-field="follow_redirects"]');
+                step.follow_redirects = Boolean(redirectNode && redirectNode.checked);
+                if (!step.url) {
+                    throw new Error("HTTP 步骤需要完整 URL");
+                }
+            }
+            return step;
+        });
+        var ids = nextSteps.map(function (step) { return step.id; });
+        if (new Set(ids).size !== ids.length) {
+            throw new Error("步骤 ID 不能重复");
+        }
+        currentRecipe.steps = nextSteps;
+        currentRecipe.schema_version = 1;
+        currentRecipe.output = Object.assign({}, currentRecipe.output || {}, {
+            auth_kind:outputKind.value,
+            headers:parseObject(outputHeaders.value, "输出 Header"),
+            cookies:parseObject(outputCookies.value, "输出 Cookie"),
+            include_session_cookies:Boolean(outputSessionCookies.checked),
+            expires_in_seconds:Number(outputExpiry.value || 1800)
+        });
+        rawField.value = pretty(currentRecipe);
+        updatePreflight();
+    }
+
+    function loadRawIntoWorkflow() {
+        var parsed;
+        try {
+            parsed = JSON.parse(rawField.value || "{}");
+        } catch (error) {
+            throw new Error("原始 Recipe 必须是有效 JSON");
+        }
+        if (!parsed || !Array.isArray(parsed.steps) || !parsed.output) {
+            throw new Error("Recipe 必须包含 steps 和 output");
+        }
+        currentRecipe = parsed;
+        renderWorkflow();
+    }
+
+    function httpOrigins() {
+        var origins = {};
+        (currentRecipe.steps || []).forEach(function (step) {
+            if ((step.type !== "http" && !(step.type === "mfa_receive" && (step.mode || "pull") === "pull")) || !step.url) {
+                return;
+            }
+            try {
+                origins[new URL(step.url).origin] = true;
+            } catch (ignore) {
+                origins["invalid"] = true;
+            }
+        });
+        return Object.keys(origins);
+    }
+
+    function updatePreflight() {
+        var modeNode = form.querySelector('input[name="ui_editor_mode"]:checked');
+        var mode = modeNode ? modeNode.value : "quick";
+        var labels = {
+            quick:"快捷配置",
+            sso_product:"SSO + 产品 Token",
+            workflow:"工作流编辑",
+            raw:"原始 Recipe"
+        };
+        document.getElementById("preflight-mode").textContent = labels[mode];
+        if (mode === "quick") {
+            document.getElementById("preflight-http-count").textContent = "1";
+            document.getElementById("preflight-origin-count").textContent = "由登录 URL 推导";
+        } else if (mode === "sso_product") {
+            document.getElementById("preflight-http-count").textContent = "3";
+            document.getElementById("preflight-origin-count").textContent = "由三个认证 URL 推导";
+        } else {
+            var count = (currentRecipe.steps || []).reduce(function (total, step) {
+                if (step.type === "http") { return total + 1; }
+                if (step.type === "mfa_receive" && (step.mode || "pull") === "pull") { return total + Number(step.max_attempts || 1); }
+                return total;
+            }, 0);
+            document.getElementById("preflight-http-count").textContent = String(count);
+            document.getElementById("preflight-origin-count").textContent = httpOrigins().length + " 个";
+        }
+        var maximum = Number(maxRequestsField.value || 1);
+        validateButton.textContent = "保存并验证（最多 " + maximum + " 次认证请求）";
+    }
+
+    function setEditorMode(mode) {
+        Array.prototype.slice.call(
+            form.querySelectorAll(".editor-mode")
+        ).forEach(function (card) {
+            var radio = card.querySelector('input[name="ui_editor_mode"]');
+            card.classList.toggle("selected", Boolean(radio && radio.value === mode));
+        });
+        Array.prototype.slice.call(
+            form.querySelectorAll("[data-editor-panel]")
+        ).forEach(function (panel) {
+            panel.classList.toggle(
+                "active", panel.getAttribute("data-editor-panel") === mode
+            );
+        });
+        recipeModeField.value = mode === "quick"
+            ? "guided"
+            : (mode === "sso_product" ? "sso_product" : "custom");
+        if (mode === "workflow") {
+            try {
+                loadRawIntoWorkflow();
+                setEditorError("");
+            } catch (error) {
+                setEditorError(error.message);
+            }
+        }
+        updatePreflight();
+    }
+
+    form.addEventListener("change", function (event) {
+        if (event.target.name === "ui_editor_mode") {
+            setEditorMode(event.target.value);
+        }
+        if (event.target === maxRequestsField) {
+            updatePreflight();
+        }
+    });
+
+    document.getElementById("add-set-step").addEventListener("click", function () {
+        try {
+            readWorkflow();
+            currentRecipe.steps.push({
+                id:"prepare_" + (currentRecipe.steps.length + 1),
+                type:"set",
+                target:"value_" + (currentRecipe.steps.length + 1),
+                operation:"literal",
+                value:"",
+                values:[]
+            });
+            renderWorkflow();
+            setEditorError("");
+        } catch (error) {
+            setEditorError(error.message);
+        }
+    });
+
+    document.getElementById("add-http-step").addEventListener("click", function () {
+        try {
+            readWorkflow();
+            currentRecipe.steps.push({
+                id:"request_" + (currentRecipe.steps.length + 1),
+                type:"http",
+                method:"POST",
+                url:"",
+                headers:{"Accept":"application/json"},
+                json:{},
+                success_statuses:[200],
+                extract:{}
+            });
+            renderWorkflow();
+            setEditorError("");
+        } catch (error) {
+            setEditorError(error.message);
+        }
+    });
+
+    document.getElementById("add-mfa-step").addEventListener("click", function () {
+        try {
+            readWorkflow();
+            currentRecipe.steps.push({
+                id:"receive_mfa_" + (currentRecipe.steps.length + 1),
+                type:"mfa_receive",
+                mode:"pull",
+                target:"mfa_code",
+                method:"POST",
+                url:"",
+                headers:{"Accept":"application/json"},
+                json:{},
+                success_statuses:[200],
+                extract:{source:"json",path:"code"},
+                max_attempts:1,
+                timeout_seconds:10
+            });
+            renderWorkflow();
+            setEditorError("");
+        } catch (error) {
+            setEditorError(error.message);
+        }
+    });
+
+    stepRoot.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-step-action]");
+        if (!button) {
+            return;
+        }
+        var card = button.closest("[data-step-index]");
+        var index = Number(card.getAttribute("data-step-index"));
+        try {
+            readWorkflow();
+            var action = button.getAttribute("data-step-action");
+            if (action === "delete") {
+                currentRecipe.steps.splice(index, 1);
+            } else if (action === "up" && index > 0) {
+                currentRecipe.steps.splice(index - 1, 0, currentRecipe.steps.splice(index, 1)[0]);
+            } else if (action === "down" && index < currentRecipe.steps.length - 1) {
+                currentRecipe.steps.splice(index + 1, 0, currentRecipe.steps.splice(index, 1)[0]);
+            }
+            renderWorkflow();
+            setEditorError("");
+        } catch (error) {
+            setEditorError(error.message);
+        }
+    });
+
+    form.addEventListener("submit", function (event) {
+        var modeNode = form.querySelector('input[name="ui_editor_mode"]:checked');
+        var mode = modeNode ? modeNode.value : "quick";
+        if (mode === "quick" || mode === "sso_product") {
+            return;
+        }
+        try {
+            if (mode === "workflow") {
+                readWorkflow();
+            } else {
+                loadRawIntoWorkflow();
+                rawField.value = pretty(currentRecipe);
+            }
+            var httpCount = currentRecipe.steps.filter(function (step) {
+                return step.type === "http";
+            }).length;
+            if (!httpCount) {
+                throw new Error("认证 Recipe 至少需要一个 HTTP 请求步骤");
+            }
+            setEditorError("");
+        } catch (error) {
+            event.preventDefault();
+            setEditorError(error.message);
+        }
+    });
+
+    rawField.value = pretty(currentRecipe);
+    renderWorkflow();
+    setEditorMode("{{ initial_editor_mode }}");
+    openStudioTab("{{ initial_view }}");
+}());
+</script>
+{% endblock %}

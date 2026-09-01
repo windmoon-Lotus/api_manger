@@ -1,6 +1,8 @@
 import hashlib
 import json
 import pickle
+import os as _os
+from pathlib import Path as _Path
 
 import redis
 import requests
@@ -12,6 +14,42 @@ from apiAnalysis.common.util import gen_banner
 from apiAnalysis.db.collection import *
 from apiAnalysis.model.exception import LibException, ParserException, AccountException
 from apiAnalysis.model.model import HeaderModel, BodyModel, requests_request, AuthSession
+
+_LOCAL_ENV_LOADED = False
+
+
+def _load_local_env():
+    """
+    Load local-only secrets without requiring callers to set PowerShell env vars
+    before every run. Files are intentionally outside or ignored by the repo.
+    Existing process environment variables win.
+    """
+    global _LOCAL_ENV_LOADED
+    if _LOCAL_ENV_LOADED:
+        return
+    _LOCAL_ENV_LOADED = True
+    root = _Path(__file__).resolve().parents[3]
+    candidates = [
+        root.parent / ".secrets" / "api-manager.local.env",
+        root.parent / ".secrets" / "api-manager-sso.local.env",
+        root / ".env.local",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in _os.environ:
+                    _os.environ[key] = value
+        except Exception:
+            logger.warning("failed to load local env file: %s", path, exc_info=True)
+
 
 def verify_session(account: SsoAccount, sso: WorkspaceSso):
     ts = WorkspaceAuth.objects(ws_id=sso.ws_id)
@@ -209,14 +247,16 @@ def legalize_ws(account: SsoAccount, sso: WorkspaceSso) -> requests.Session:
     # target different environments without code changes. Set:
     #   API_MANAGER_SSO_AUTH_URL   e.g. https://auth.example.com/authorization
     #   API_MANAGER_SSO_LOGIN_URL  e.g. https://login.example.com/login/token-login
-    import os as _os
+    _load_local_env()
     url = _os.getenv("API_MANAGER_SSO_AUTH_URL", "https://auth.example.com/authorization")
     login_url = _os.getenv("API_MANAGER_SSO_LOGIN_URL", "https://login.example.com/login/token-login")
     session = requests.Session()
     try:
 
         #rest = session.get(sso.portal_site, proxies=proxies, verify=False, timeout=timeout)
-        _init_token = "MjQig6nQ8EgJBEFiImgxievEaBbKNxpZ"
+        _init_token = _os.getenv("API_MANAGER_SSO_CLIENT_TOKEN", "").strip()
+        if not _init_token:
+            raise AccountException("SSO_CLIENT_TOKEN_MISSING")
         _init_time = int(time.time())
         data = {
             'account': account.username,
@@ -228,16 +268,26 @@ def legalize_ws(account: SsoAccount, sso: WorkspaceSso) -> requests.Session:
         logger.debug("sso login token hash prepared for user=%s", account.username)
         res = requests.post(url, proxies=proxies, json=data, verify=False, timeout=timeout)
         logger.debug("sso auth status=%s", res.status_code)
-        foo: dict = json.loads(res.text)
-        access_token: str = 'Bearer' + ' ' + foo['access_token']
-        requests.post(url, json=data, proxies=proxies, verify=False, timeout=timeout)
-        url1 = login_url + "?token=" + foo['access_token']
+        if res.status_code >= 400:
+            raise AccountException("SSO_AUTH_HTTP_{}".format(res.status_code))
+        try:
+            foo: dict = res.json()
+        except ValueError:
+            raise AccountException("SSO_AUTH_INVALID_JSON") from None
+        if not isinstance(foo, dict) or not foo.get('access_token'):
+            raise AccountException("SSO_AUTH_TOKEN_MISSING")
+        access_token: str = 'Bearer' + ' ' + str(foo['access_token'])
+        url1 = login_url + "?token=" + str(foo['access_token'])
         logger.debug("sso token login redirect prepared for user=%s", account.username)
-        session.get(url1, proxies=proxies, verify=False, timeout=timeout)
+        login_response = session.get(url1, proxies=proxies, verify=False, timeout=timeout)
+        if login_response.status_code >= 400:
+            raise AccountException("SSO_TOKEN_LOGIN_HTTP_{}".format(login_response.status_code))
         header = {"Authorization": access_token}
         session.headers.update(header)
-    except Exception as e:
-        raise AccountException(e)
+    except AccountException:
+        raise
+    except Exception as exc:
+        raise AccountException("SSO_AUTH_{}".format(exc.__class__.__name__.upper())) from None
     return access_token, session
 
 def _sso_password_verify(username, password):

@@ -9,8 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from apiAnalysis.db.collection import raw_data, security_test_result, security_test_run
+from apiAnalysis.db.collection import raw_data, security_test_run
 from apiAnalysis.main import _ensure_mongo_connection
+from apiAnalysis.tool.execution_contract import (
+    ExecutionContext,
+    create_execution_run,
+    record_execution_result,
+)
 
 
 VERDICT_MAP = {
@@ -108,30 +113,38 @@ def record_run(
     check_type: str = "idor",
     mode: str = "full",
     operator: str = "",
+    project_id: str = "",
+    env_id: str = "",
 ) -> Dict[str, Any]:
     analysis_doc = _load_json(analysis_path)
     matrix_doc = _load_json(matrix_path) if matrix_path else {}
     matrix_index = _index_matrix(matrix_doc)
     findings: List[Dict[str, Any]] = analysis_doc.get("findings") or []
 
-    run = security_test_run(
+    effective_project_id = str(project_id or analysis_doc.get("project_id") or "")
+    if not effective_project_id:
+        raise ValueError("project_id is required by execution.v1")
+    context = ExecutionContext(
+        project_id=effective_project_id,
+        env_id=str(env_id or analysis_doc.get("env_id") or ""),
+        auth_mode="inherit",
+        adapter_id="analysis_evidence_import",
+        adapter_version="1",
+    )
+    run = create_execution_run(
         name=name or analysis_path.stem,
-        profile_id=profile_id,
         check_type=check_type,
+        context=context,
         scope={
             "analysis_path": str(analysis_path),
             "matrix_path": str(matrix_path) if matrix_path else "",
             "evidence_mode": mode,
         },
-        source="api_manger_tools",
-        status=security_test_run.DONE,
-        summary=analysis_doc.get("summary") or {},
         evidence_ref=str(analysis_path),
-        started_at=dt.datetime.utcnow(),
-        finished_at=dt.datetime.utcnow(),
         operator=operator,
-        notes="recorded from local analysis output",
     )
+    run.profile_id = profile_id
+    run.notes = "recorded from local analysis output through execution.v1"
     run.save()
 
     written = 0
@@ -147,8 +160,9 @@ def record_run(
         related_pathid = int(matrix_item.get("pathid") or 0) or _related_pathid(
             matrix_item.get("endpointId"), endpoint_name=endpoint_name, method=method
         ) or None
-        result = security_test_result(
-            run_id=run.id,
+        record_execution_result(
+            run,
+            None,
             case_name=str(finding.get("case") or matrix_item.get("case") or ""),
             check_type=check_type,
             target={
@@ -169,8 +183,12 @@ def record_run(
             evidence_ref=str(matrix_path or analysis_path),
             related_pathid=related_pathid,
         )
-        result.save()
         written += 1
+
+    run.status = security_test_run.DONE
+    run.summary = analysis_doc.get("summary") or {}
+    run.finished_at = dt.datetime.utcnow()
+    run.save()
 
     return {"run_id": str(run.id), "results": written, "summary": analysis_doc.get("summary") or {}}
 
@@ -184,6 +202,8 @@ def main() -> int:
     parser.add_argument("--check-type", default="idor")
     parser.add_argument("--mode", choices=["full", "safe"], default="full")
     parser.add_argument("--operator", default="")
+    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--env-id", default="")
     args = parser.parse_args()
 
     _ensure_mongo_connection()
@@ -195,6 +215,8 @@ def main() -> int:
         check_type=args.check_type,
         mode=args.mode,
         operator=args.operator,
+        project_id=args.project_id,
+        env_id=args.env_id,
     )
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0

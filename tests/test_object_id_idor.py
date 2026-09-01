@@ -103,34 +103,5 @@ class BuildIdorPayloadTest(unittest.TestCase):
         self.assertEqual(swaps, [])
 
 
-class IdorJudgementTest(unittest.TestCase):
-    def _engine(self):
-        from apiAnalysis.rule.privilege import PrivilegeEngine
-        return PrivilegeEngine()
-
-    def test_escalates_when_attacker_gets_victim_data(self):
-        body = '{"id":1,"name":"victim","email":"v@test"}'
-        test = {"evidence": {"status_code": 200, "text": body}}        # attacker
-        reference = {"evidence": {"status_code": 200, "text": body}}    # victim self
-        swaps = [{"location": "query", "param": "user_id",
-                  "attacker": "A-1", "victim": "V-9"}]
-        judged = self._engine()._judge_idor(test, reference, swaps)
-        self.assertEqual(judged["result"], "potential_vuln")
-        self.assertGreaterEqual(judged["rule_score"], 80.0)
-        self.assertIn("IDOR_OBJECT_SWAP", judged["rule_reason_codes"])
-        self.assertIn("IDOR_CROSS_ACCOUNT_DATA", judged["rule_reason_codes"])
-        self.assertEqual(judged["evidence"]["idor_swaps"], swaps)
-
-    def test_no_escalation_when_attacker_blocked(self):
-        test = {"evidence": {"status_code": 403, "text": "forbidden"}}
-        reference = {"evidence": {"status_code": 200, "text": '{"id":1}'}}
-        swaps = [{"location": "query", "param": "user_id",
-                  "attacker": "A-1", "victim": "V-9"}]
-        judged = self._engine()._judge_idor(test, reference, swaps)
-        self.assertNotEqual(judged["result"], "potential_vuln")
-        self.assertIn("IDOR_OBJECT_SWAP", judged["rule_reason_codes"])
-        self.assertNotIn("IDOR_CROSS_ACCOUNT_DATA", judged["rule_reason_codes"])
-
-
 if __name__ == "__main__":
     unittest.main()

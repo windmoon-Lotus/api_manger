@@ -1,5 +1,9 @@
 # Request Asset and Snapshot Model
 
+> Status: design reference. Request assets and immutable snapshots remain
+> current concepts, but execution now uses the durable scheduler and unified
+> result contract. See `PROJECT_OVERVIEW.md` and `docs/execution_scheduler.md`.
+
 This document describes the stage 2 request-modeling layer. It is intended for
 future maintainers and AI agents that need to debug request generation, replay,
 or external tool adapters.

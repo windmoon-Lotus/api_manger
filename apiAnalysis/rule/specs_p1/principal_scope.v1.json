@@ -1,0 +1,13 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "principal.profile_scope.relationship",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {"same_project": true, "same_environment": true, "principal_relation": "any"},
+  "inputs": ["principal_pair"],
+  "predicates": [{"name": "principal_pair.relation_known.v1"}],
+  "score": {"base": 0.0, "features": [{"predicate": "principal_pair.confidence.v1", "weight": 1.0}]},
+  "emit": {"adapter": "principal_scope_candidate.v1"},
+  "safety": {"network": "forbidden", "mutation": "forbidden", "max_matches": 10000}
+}

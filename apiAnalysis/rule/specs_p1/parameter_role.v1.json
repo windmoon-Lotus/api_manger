@@ -1,0 +1,13 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "parameter.context_role.classification",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {"same_project": true, "same_environment": true, "principal_relation": "any"},
+  "inputs": ["parameter"],
+  "predicates": [{"name": "parameter.category_supported.v1"}],
+  "score": {"base": 0.0, "features": [{"predicate": "parameter.category_confidence.v1", "weight": 1.0}]},
+  "emit": {"adapter": "parameter_role_candidate.v1"},
+  "safety": {"network": "forbidden", "mutation": "forbidden", "max_matches": 100000}
+}

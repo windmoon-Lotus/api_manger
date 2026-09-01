@@ -73,37 +73,11 @@
                     <input type="text" name="replay_note" placeholder="{{ t('raw_replay_note') }}" class="layui-input">
                 </div>
                 <div class="layui-input-inline layui-show-xs-block">
-                    <input type="checkbox" name="auto_vuln_on_fail" title="{{ t('raw_auto_vuln') }}">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="replay_fail_scenario" value="replay_verify" placeholder="{{ t('raw_replay_scenario') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="replay_fail_severity" value="medium" placeholder="{{ t('raw_replay_severity') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
                     <button class="layui-btn layui-btn-warm" type="button" onclick="submitBatch('batch_replay_verify')">
                         {{ t('raw_btn_replay') }}
                     </button>
                 </div>
 
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="vuln_scenario" value="manual_link" placeholder="{{ t('raw_vuln_scenario') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="vuln_severity" value="medium" placeholder="{{ t('raw_vuln_severity') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="vuln_status" value="open" placeholder="{{ t('raw_vuln_status') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <input type="text" name="vuln_result" value="linked from interface manager" placeholder="{{ t('raw_vuln_result') }}" class="layui-input">
-                </div>
-                <div class="layui-input-inline layui-show-xs-block">
-                    <button class="layui-btn layui-btn-danger" type="button" onclick="submitBatch('batch_link_vuln')">
-                        {{ t('raw_btn_link_vuln') }}
-                    </button>
-                </div>
             </form>
         </div>
 

@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body">
+    {% if notice %}
+        <blockquote class="layui-elem-quote {% if notice.level == 'success' %}layui-quote-nm{% endif %}">
+            {{ notice.text }}
+        </blockquote>
+    {% endif %}
+
+    {% if summary %}
+    <div class="layui-row layui-col-space10" style="margin-bottom:15px;">
+        {% for status, count in summary.items() %}
+        <div class="layui-col-xs2">
+            <div class="layui-card">
+                <div class="layui-card-body" style="text-align:center;padding:10px;">
+                    <span style="font-size:24px;font-weight:bold;">{{ count }}</span><br>
+                    <small>{{ status }}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="layui-row">
+        <form action="{{ url_for('web.findings_list') }}" method="GET" class="layui-form layui-col-space5">
+            <div class="layui-input-inline">
+                <select name="project_id">
+                    <option value="">全部项目</option>
+                    {% for p in projects %}
+                        <option value="{{ p.project_id }}" {% if project_id == p.project_id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline">
+                <select name="status">
+                    <option value="">全部状态</option>
+                    {% for s in all_statuses %}
+                        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline">
+                <select name="severity">
+                    <option value="">全部等级</option>
+                    {% for s in ['critical','high','medium','low','info'] %}
+                        <option value="{{ s }}" {% if severity_filter == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline">
+                <button class="layui-btn" lay-submit>筛选</button>
+            </div>
+        </form>
+    </div>
+
+    <table class="layui-table">
+        <thead>
+            <tr>
+                <th>标题</th><th>状态</th><th>等级</th><th>检查类型</th><th>分配给</th><th>发现时间</th><th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in findings %}
+            <tr>
+                <td><a href="{{ url_for('web.finding_detail', finding_id=f.id) }}">{{ f.title }}</a></td>
+                <td>
+                    {% if f.status in ('verified_fixed','false_positive','accepted_risk') %}
+                        <span class="layui-badge layui-bg-gray">{{ f.status }}</span>
+                    {% elif f.status == 'open' %}
+                        <span class="layui-badge">{{ f.status }}</span>
+                    {% elif f.status == 'reopened' %}
+                        <span class="layui-badge">{{ f.status }}</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-orange">{{ f.status }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if f.severity in ('critical','high') %}
+                        <span class="layui-badge layui-bg-red">{{ f.severity }}</span>
+                    {% elif f.severity == 'medium' %}
+                        <span class="layui-badge layui-bg-orange">{{ f.severity }}</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-blue">{{ f.severity or '-' }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ f.check_type or '-' }}</td>
+                <td>{{ f.assigned_to or '-' }}</td>
+                <td>{{ f.found_at.strftime('%Y-%m-%d') if f.found_at else '' }}</td>
+                <td>
+                    {% if can_manage and f.status in ('open', 'reopened') %}
+                    <form action="{{ url_for('web.findings_list') }}" method="POST" style="display:inline">
+                        <input type="hidden" name="project_id" value="{{ project_id }}">
+                        <input type="hidden" name="finding_id" value="{{ f.id }}">
+                        <input type="hidden" name="action" value="transition">
+                        {% if f.status == 'open' %}
+                            <input type="hidden" name="target_status" value="fixing">
+                            <button class="layui-btn layui-btn-xs">开始修复</button>
+                        {% elif f.status == 'reopened' %}
+                            <input type="hidden" name="target_status" value="fixing">
+                            <button class="layui-btn layui-btn-xs">重新修复</button>
+                        {% endif %}
+                    </form>
+                    {% elif can_manage and f.status in ('fixing', 'fixed_pending_verify') %}
+                    <a class="layui-btn layui-btn-xs layui-btn-normal" href="{{ url_for('web.finding_detail', finding_id=f.id) }}">证据复测</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not findings %}
+            <tr><td colspan="7" style="text-align:center;color:#999;">暂无漏洞记录</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

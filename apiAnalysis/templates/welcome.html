@@ -1,69 +1,98 @@
 {% extends "layout.html" %}
-
 {% block body %}
-<div class="x-body">
-    <blockquote class="layui-elem-quote">欢迎{% if is_manager() %}管理员{% endif %}：
-        <span class="x-red">{{ session['username'] }}</span>！当前时间:{{ time_now() }}
+<div class="x-body" style="padding:20px;">
+    <blockquote class="layui-elem-quote">
+        欢迎管理员：<span style="color:red;">{{ session.get('username', '') }}</span>！
+        当前时间:{{ time_now() }}
     </blockquote>
-    <fieldset class="layui-elem-field">
-        <legend>数据统计</legend>
-        <div class="layui-field-box">
-            <div class="layui-col-md12">
-                <div class="layui-card">
-                    <div class="layui-card-body">
-                        <div class="layui-carousel x-admin-carousel x-admin-backlog" lay-anim="" lay-indicator="inside"
-                             lay-arrow="none" style="width: 100%; height: 90px;">
-                            <div carousel-item="">
-                                <ul class="layui-row layui-col-space10 layui-this">
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>工作空间</h3>
-                                            <p>
-                                                <cite>{{ ws_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>请求数</h3>
-                                            <p>
-                                                <cite>{{ request_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>使用人数</h3>
-                                            <p>
-                                                <cite>{{ people_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>部门数量</h3>
-                                            <p>
-                                                <cite>{{ depart_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>系统数量</h3>
-                                            <p>
-                                                <cite>{{ system_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                    <li class="layui-col-xs2">
-                                        <a href="javascript:;" class="x-admin-backlog-body">
-                                            <h3>主机数量</h3>
-                                            <p>
-                                                <cite>{{ hosts_num }}</cite></p>
-                                        </a>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
+
+    <div class="layui-row layui-col-space15" style="margin-top:15px;">
+        <div class="layui-col-md3">
+            <div class="layui-card">
+                <div class="layui-card-body" style="text-align:center;padding:20px;">
+                    <div style="font-size:36px;font-weight:bold;color:#1E9FFF;">{{ project_count }}</div>
+                    <div>活跃项目</div>
                 </div>
             </div>
         </div>
-    </fieldset>
+        <div class="layui-col-md3">
+            <div class="layui-card">
+                <div class="layui-card-body" style="text-align:center;padding:20px;">
+                    <div style="font-size:36px;font-weight:bold;color:#FFB800;">{{ pending_review }}</div>
+                    <div>待复核结果</div>
+                </div>
+            </div>
+        </div>
+        <div class="layui-col-md3">
+            <div class="layui-card">
+                <div class="layui-card-body" style="text-align:center;padding:20px;">
+                    <div style="font-size:36px;font-weight:bold;color:#FF5722;">{{ open_findings }}</div>
+                    <div>开放漏洞</div>
+                </div>
+            </div>
+        </div>
+        <div class="layui-col-md3">
+            <div class="layui-card">
+                <div class="layui-card-body" style="text-align:center;padding:20px;">
+                    <div style="font-size:36px;font-weight:bold;color:#999;">{{ unassigned_obs }}</div>
+                    <div>未路由观察</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="layui-row layui-col-space15" style="margin-top:15px;">
+        <div class="layui-col-md6">
+            <div class="layui-card">
+                <div class="layui-card-header">最近执行</div>
+                <div class="layui-card-body">
+                    <table class="layui-table" lay-size="sm">
+                        <thead><tr><th>项目</th><th>名称</th><th>状态</th><th>时间</th></tr></thead>
+                        <tbody>
+                            {% for run in recent_runs %}
+                            <tr>
+                                <td><small>{{ run.project_id or '-' }}</small></td>
+                                <td>{{ run.name[:40] }}</td>
+                                <td>
+                                    {% if run.status == 'done' %}<span class="layui-badge layui-bg-green">done</span>
+                                    {% elif run.status == 'running' %}<span class="layui-badge layui-bg-blue">running</span>
+                                    {% elif run.status == 'paused' %}<span class="layui-badge layui-bg-orange">paused</span>
+                                    {% else %}<span class="layui-badge layui-bg-gray">{{ run.status }}</span>{% endif %}
+                                </td>
+                                <td><small>{{ run.started_at.strftime('%m-%d %H:%M') if run.started_at else '-' }}</small></td>
+                            </tr>
+                            {% endfor %}
+                            {% if not recent_runs %}
+                            <tr><td colspan="4" style="text-align:center;color:#999;">暂无执行记录</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="layui-col-md6">
+            <div class="layui-card">
+                <div class="layui-card-header">待复核 (最新)</div>
+                <div class="layui-card-body">
+                    <table class="layui-table" lay-size="sm">
+                        <thead><tr><th>用例</th><th>verdict</th><th>项目</th><th>时间</th></tr></thead>
+                        <tbody>
+                            {% for r in review_items %}
+                            <tr>
+                                <td>{{ r.case_name[:40] if r.case_name else '-' }}</td>
+                                <td><span class="layui-badge {% if r.verdict == 'potential_vuln' %}{% else %}layui-bg-orange{% endif %}">{{ r.verdict }}</span></td>
+                                <td><small>{{ r.project_id or '-' }}</small></td>
+                                <td><small>{{ r.ctime.strftime('%m-%d %H:%M') if r.ctime else '-' }}</small></td>
+                            </tr>
+                            {% endfor %}
+                            {% if not review_items %}
+                            <tr><td colspan="4" style="text-align:center;color:#999;">复核队列为空</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

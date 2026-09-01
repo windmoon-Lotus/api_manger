@@ -1,0 +1,13 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "endpoint.resource_family.crud_pair",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {"same_project": true, "same_environment": true, "principal_relation": "any"},
+  "inputs": ["endpoint_pair"],
+  "predicates": [{"name": "endpoint_pair.crud_compatible.v1"}],
+  "score": {"base": 0.0, "features": [{"predicate": "endpoint_pair.confidence.v1", "weight": 1.0}]},
+  "emit": {"adapter": "crud_pair_candidate.v1"},
+  "safety": {"network": "forbidden", "mutation": "forbidden", "max_matches": 50000}
+}

@@ -1,7 +1,7 @@
 import unittest
 
 from apiAnalysis.db.save import _join_base_url, _openapi_servers
-from apiAnalysis.tool.api_signature import abstract_signature, api_signature
+from apiAnalysis.tool.api_signature import abstract_signature, api_signature, api_signature_object_id
 
 
 class BaseUrlImportSignatureTest(unittest.TestCase):
@@ -36,6 +36,14 @@ class BaseUrlImportSignatureTest(unittest.TestCase):
             abstract_signature("GET", "/api/v1/users/{id}.json"),
             abstract_signature("GET", "/api/v1/users/[NUMBER].json"),
         )
+
+    def test_concrete_identity_can_be_project_scoped_without_changing_signature(self):
+        args = ("GET", "https://api.example.com/users/1", "/users/1", {}, None)
+        self.assertNotEqual(
+            api_signature_object_id(*args, identity_scope="project-a"),
+            api_signature_object_id(*args, identity_scope="project-b"),
+        )
+        self.assertEqual(api_signature(*args), api_signature(*args))
 
 
 if __name__ == "__main__":

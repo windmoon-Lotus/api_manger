@@ -1,0 +1,196 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body">
+    {% if notice %}
+    <div class="layui-alert {{ 'layui-bg-red' if notice.level == 'error' else 'layui-bg-green' }}" style="padding:10px 15px;margin-bottom:12px;color:#fff;">
+        {{ notice.text }}
+    </div>
+    {% endif %}
+    <div class="layui-row">
+        <div class="layui-col-xs12">
+            <a href="{{ url_for('web.findings_list', project_id=finding.project_id) }}" class="layui-btn layui-btn-sm layui-btn-primary">← 返回列表</a>
+            <h2 style="display:inline;margin-left:10px;">{{ finding.title }}</h2>
+            {% if finding.status in ('verified_fixed','false_positive','accepted_risk') %}
+                <span class="layui-badge layui-bg-gray">{{ finding.status }}</span>
+            {% elif finding.status == 'open' or finding.status == 'reopened' %}
+                <span class="layui-badge">{{ finding.status }}</span>
+            {% else %}
+                <span class="layui-badge layui-bg-orange">{{ finding.status }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <fieldset class="layui-elem-field" style="margin-top:15px;">
+        <legend>基本信息</legend>
+        <div class="layui-field-box">
+            <table class="layui-table" style="margin:0;">
+                <tr><td style="width:120px;font-weight:bold;">等级</td><td>{{ finding.severity or '-' }}</td></tr>
+                <tr><td style="font-weight:bold;">检查类型</td><td>{{ finding.check_type or '-' }}</td></tr>
+                <tr><td style="font-weight:bold;">项目</td><td>{{ finding.project_id }}</td></tr>
+                <tr><td style="font-weight:bold;">环境</td><td>{{ finding.env_id or '-' }}</td></tr>
+                <tr><td style="font-weight:bold;">分配给</td><td>{{ finding.assigned_to or '未分配' }}</td></tr>
+                <tr><td style="font-weight:bold;">发现者</td><td>{{ finding.found_by or '-' }}</td></tr>
+                <tr><td style="font-weight:bold;">发现时间</td><td>{{ finding.found_at.strftime('%Y-%m-%d %H:%M') if finding.found_at else '-' }}</td></tr>
+                {% if finding.closed_at %}
+                <tr><td style="font-weight:bold;">关闭时间</td><td>{{ finding.closed_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+                <tr><td style="font-weight:bold;">关闭原因</td><td>{{ finding.close_reason or '-' }}</td></tr>
+                {% endif %}
+                <tr><td style="font-weight:bold;">关联结果</td><td>{{ finding.result_ids|length if finding.result_ids else 0 }} 条</td></tr>
+                <tr><td style="font-weight:bold;">关联运行</td><td>{{ finding.run_ids|length if finding.run_ids else 0 }} 次</td></tr>
+            </table>
+        </div>
+    </fieldset>
+
+    {% if finding.evidence_summary %}
+    <fieldset class="layui-elem-field">
+        <legend>证据摘要</legend>
+        <div class="layui-field-box">
+            <pre style="white-space:pre-wrap;font-size:12px;">{{ finding.evidence_summary | tojson(indent=2) }}</pre>
+        </div>
+    </fieldset>
+    {% endif %}
+
+    {% if can_manage and finding.status not in ('verified_fixed','false_positive','accepted_risk') %}
+    <fieldset class="layui-elem-field">
+        <legend>操作</legend>
+        <div class="layui-field-box">
+            {% if finding.status in ('open', 'reopened') %}
+            <form action="{{ url_for('web.findings_list') }}" method="POST" class="layui-form">
+                <input type="hidden" name="project_id" value="{{ finding.project_id }}">
+                <input type="hidden" name="finding_id" value="{{ finding.id }}">
+                <input type="hidden" name="action" value="transition">
+                <input type="hidden" name="return_to" value="detail">
+                <div class="layui-form-item">
+                    <div class="layui-inline">
+                        <select name="target_status">
+                            {% if finding.status == 'open' %}
+                                <option value="fixing">开始修复</option>
+                                <option value="false_positive">误报</option>
+                                <option value="accepted_risk">接受风险</option>
+                            {% elif finding.status == 'reopened' %}
+                                <option value="fixing">重新修复</option>
+                                <option value="accepted_risk">接受风险</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="layui-inline">
+                        <input type="text" name="reason" placeholder="原因说明" class="layui-input">
+                    </div>
+                    <div class="layui-inline">
+                        <button class="layui-btn" lay-submit>执行</button>
+                    </div>
+                </div>
+            </form>
+            {% endif %}
+            {% if finding.status in ('fixing', 'fixed_pending_verify') %}
+            <form action="{{ url_for('web.findings_list') }}" method="POST" class="layui-form" style="margin-top:10px;">
+                <input type="hidden" name="project_id" value="{{ finding.project_id }}">
+                <input type="hidden" name="finding_id" value="{{ finding.id }}">
+                <input type="hidden" name="action" value="schedule_retest">
+                <input type="hidden" name="return_to" value="detail">
+                <button class="layui-btn layui-btn-warm" lay-submit>按原始证据安排复测</button>
+                <span style="color:#777;margin-left:8px;">复测结论会自动关闭、重新打开或保持待验证。</span>
+            </form>
+            {% endif %}
+            <form action="{{ url_for('web.findings_list') }}" method="POST" class="layui-form" style="margin-top:10px;">
+                <input type="hidden" name="project_id" value="{{ finding.project_id }}">
+                <input type="hidden" name="finding_id" value="{{ finding.id }}">
+                <input type="hidden" name="action" value="comment">
+                <input type="hidden" name="return_to" value="detail">
+                <div class="layui-form-item">
+                    <div class="layui-inline" style="width:60%;">
+                        <input type="text" name="note" required placeholder="添加评论" class="layui-input">
+                    </div>
+                    <div class="layui-inline">
+                        <button class="layui-btn layui-btn-normal" lay-submit>评论</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </fieldset>
+    {% endif %}
+
+    {% if retest_runs %}
+    <fieldset class="layui-elem-field">
+        <legend>修复复测运行 ({{ retest_runs|length }})</legend>
+        <div class="layui-field-box">
+            <table class="layui-table">
+                <thead><tr><th>运行</th><th>状态</th><th>用例</th><th>完成 / 失败</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for run in retest_runs %}
+                    <tr>
+                        <td><code>{{ run.id }}</code></td>
+                        <td>{{ run.status }}</td>
+                        <td>{{ run.total_cases or 0 }}</td>
+                        <td>{{ run.completed_cases or 0 }} / {{ run.failed_cases or 0 }}</td>
+                        <td>
+                            {% if can_manage and finding.status == 'fixed_pending_verify' and run.status == 'done' %}
+                            <form action="{{ url_for('web.findings_list') }}" method="POST" style="display:inline;">
+                                <input type="hidden" name="project_id" value="{{ finding.project_id }}">
+                                <input type="hidden" name="finding_id" value="{{ finding.id }}">
+                                <input type="hidden" name="run_id" value="{{ run.id }}">
+                                <input type="hidden" name="action" value="evaluate_retest">
+                                <input type="hidden" name="return_to" value="detail">
+                                <button class="layui-btn layui-btn-xs" type="submit">立即归档结论</button>
+                            </form>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </fieldset>
+    {% endif %}
+
+    <fieldset class="layui-elem-field">
+        <legend>事件历史 ({{ events|length }})</legend>
+        <div class="layui-field-box">
+            <ul class="layui-timeline">
+                {% for ev in events %}
+                <li class="layui-timeline-item">
+                    <i class="layui-icon layui-timeline-axis">&#xe63f;</i>
+                    <div class="layui-timeline-content layui-text">
+                        <h3 class="layui-timeline-title" style="font-size:13px;">
+                            {{ ev.event_type }}
+                            {% if ev.from_status and ev.to_status %}
+                                : {{ ev.from_status }} → {{ ev.to_status }}
+                            {% endif %}
+                            <small style="color:#999;">{{ ev.ctime.strftime('%Y-%m-%d %H:%M') if ev.ctime else '' }} · {{ ev.actor }}</small>
+                        </h3>
+                        {% if ev.reason %}<p>{{ ev.reason }}</p>{% endif %}
+                        {% if ev.note %}<p>{{ ev.note }}</p>{% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+                {% if not events %}
+                <li class="layui-timeline-item"><div class="layui-timeline-content">暂无事件</div></li>
+                {% endif %}
+            </ul>
+        </div>
+    </fieldset>
+
+    {% if results %}
+    <fieldset class="layui-elem-field">
+        <legend>关联机器结果 ({{ results|length }})</legend>
+        <div class="layui-field-box">
+            <table class="layui-table">
+                <thead><tr><th>用例</th><th>verdict</th><th>outcome</th><th>原因码</th><th>时间</th></tr></thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td>{{ r.case_name[:80] if r.case_name else '' }}</td>
+                        <td>{{ r.verdict }}</td>
+                        <td>{{ r.outcome_class or '-' }}</td>
+                        <td><small>{{ (r.reason_codes or [])|join(', ') }}</small></td>
+                        <td>{{ r.ctime.strftime('%m-%d %H:%M') if r.ctime else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </fieldset>
+    {% endif %}
+</div>
+{% endblock %}

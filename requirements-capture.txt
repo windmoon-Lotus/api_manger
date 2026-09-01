@@ -1,0 +1,2 @@
+# Optional legacy mitmproxy flow reader. Install only in an isolated venv.
+mitmproxy==9.0.1

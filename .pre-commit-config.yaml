@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: public-data-guard
+        name: public data guard
+        entry: python tools/public_repo_guard.py --staged
+        language: system
+        pass_filenames: false
+        always_run: true

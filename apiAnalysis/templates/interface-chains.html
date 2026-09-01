@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body chain-page">
+    <style>
+        .chain-page { color:#172033; background:#f5f7fa; min-height:100%; }
+        .panel,.chain-card { background:#fff; border:1px solid #dfe4ea; margin-bottom:12px; }
+        .panel { padding:14px 16px; }
+        .title { font-size:20px; font-weight:650; color:#101828; }
+        .muted { color:#667085; line-height:1.6; }
+        .metrics { display:grid; grid-template-columns:repeat(7,minmax(105px,1fr)); gap:8px; margin-top:12px; }
+        .metric { border:1px solid #e4e7ec; background:#f8fafc; padding:9px 11px; }
+        .metric span { display:block; color:#667085; }.metric strong { display:block; font-size:19px; color:#101828; }
+        .source-model { display:grid; grid-template-columns:1fr 44px 1fr 44px 1fr; gap:8px; align-items:center; margin-top:12px; }
+        .source-card { border:1px solid #d0d5dd; background:#fcfcfd; padding:10px 12px; min-height:58px; }
+        .source-card strong { display:block; color:#101828; margin-bottom:3px; }.source-arrow { color:#009688; font-size:22px; text-align:center; }
+        .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .toolbar select,.toolbar input { min-width:145px; }
+        .chain-card { overflow:hidden; }
+        .card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:13px 15px; background:#fcfcfd; border-bottom:1px solid #e4e7ec; }
+        .family { font-size:18px; font-weight:650; color:#101828; }
+        .badge { display:inline-block; padding:2px 7px; border:1px solid #d0d5dd; background:#f8fafc; color:#344054; margin:3px 4px 2px 0; line-height:20px; }
+        .badge.good { border-color:#98d7bd; background:#ecfdf3; color:#027a48; }.badge.warn { border-color:#ffd18a; background:#fffaeb; color:#b54708; }.badge.bad { border-color:#f7a8a8; background:#fff1f3; color:#b42318; }.badge.info { border-color:#84caff; background:#eff8ff; color:#175cd3; }
+        .sequence { display:flex; gap:8px; align-items:stretch; overflow-x:auto; padding:14px 15px; }
+        .step { min-width:210px; max-width:320px; border:1px solid #dfe4ea; background:#fff; padding:9px 10px; position:relative; }
+        .step:not(:last-child)::after { content:'→'; position:absolute; right:-18px; top:34px; color:#009688; font-size:20px; z-index:2; }
+        .step-index { display:inline-block; width:22px; height:22px; line-height:22px; border-radius:50%; text-align:center; background:#009688; color:#fff; margin-right:6px; }
+        .method { display:inline-block; min-width:48px; text-align:center; color:#fff; background:#475467; padding:2px 6px; font-weight:650; }.method.GET{background:#1677ff}.method.POST{background:#12a150}.method.PUT,.method.PATCH{background:#d97706}.method.DELETE{background:#d92d20}
+        .path { display:block; color:#101828; word-break:break-all; margin:6px 0 3px; }
+        .body-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr); border-top:1px solid #e4e7ec; }
+        .body-grid > section { padding:12px 15px; }.body-grid > section + section { border-left:1px solid #e4e7ec; }
+        .section-title { color:#344054; font-weight:650; margin-bottom:7px; }
+        .mapping-table,.endpoint-table { width:100%; border-collapse:collapse; font-size:12px; }
+        .mapping-table th,.mapping-table td,.endpoint-table th,.endpoint-table td { border:1px solid #e4e7ec; text-align:left; padding:6px 7px; vertical-align:top; }
+        .mapping-table th,.endpoint-table th { background:#f8fafc; color:#475467; }
+        .next-action { border:1px solid #98d7bd; background:#ecfdf3; color:#027a48; padding:9px 10px; line-height:1.6; }
+        .drawer { border-top:1px solid #e4e7ec; }.drawer > summary { cursor:pointer; padding:11px 15px; background:#fcfcfd; color:#006d63; font-weight:600; }.drawer[open] > summary { border-bottom:1px solid #e4e7ec; }.drawer-body { padding:12px 15px; }
+        .feedback-grid { display:grid; grid-template-columns:repeat(4,minmax(130px,1fr)); gap:8px; }.feedback-grid .wide { grid-column:1 / -1; }.feedback-grid label { display:block; color:#475467; margin-bottom:3px; }.feedback-grid textarea { min-height:62px; }
+        .empty { text-align:center; padding:30px; }
+        @media(max-width:1200px){.metrics{grid-template-columns:repeat(4,1fr)}.body-grid{grid-template-columns:1fr}.body-grid>section+section{border-left:0;border-top:1px solid #e4e7ec}.feedback-grid{grid-template-columns:repeat(2,1fr)}}
+        @media(max-width:760px){.metrics,.source-model,.feedback-grid{grid-template-columns:1fr}.source-arrow{transform:rotate(90deg)}.card-head{display:block}.sequence{display:block}.step{max-width:none;margin-bottom:8px}.step::after{display:none}}
+    </style>
+
+    {% set knowledge_nav_active = 'chains' %}
+    {% include '_knowledge-nav.html' %}
+    {% if saved == '1' %}<div class="panel layui-elem-quote layui-quote-nm">链路人工结论已保存。</div>{% elif saved %}<div class="panel layui-elem-quote layui-quote-nm">链路结论未保存，请刷新后重试。</div>{% endif %}
+
+    <section class="panel">
+        <div class="title">链路编排</div>
+        <div class="muted">这里展示当前项目的实时链路候选，不再读取历史 JSON。接口文档先提供同项目、同分组和完整字段结构；已验证参数关系决定真实传值；流量样本补充具体取值、命中频率和运行证据。新增接口导入后会自动进入对应资源组重新投影。</div>
+        <div class="source-model">
+            <div class="source-card"><strong>1. Apifox / OpenAPI / Postman</strong><span class="muted">项目边界、目录分组、完整请求与响应结构</span></div><div class="source-arrow">→</div>
+            <div class="source-card"><strong>2. 参数关系</strong><span class="muted">来源响应字段如何注入下游请求，确认关系受保护</span></div><div class="source-arrow">→</div>
+            <div class="source-card"><strong>3. 真实流量与验证</strong><span class="muted">样本值、使用频率、Host、认证与执行结果</span></div>
+        </div>
+        <div class="metrics">
+            <div class="metric"><span>项目接口</span><strong>{{ stats.endpoints or 0 }}</strong></div><div class="metric"><span>候选链路</span><strong>{{ stats.chains or 0 }}</strong></div><div class="metric"><span>纯文档</span><strong>{{ stats.document or 0 }}</strong></div><div class="metric"><span>文档 + 流量</span><strong>{{ stats.mixed or 0 }}</strong></div><div class="metric"><span>纯流量</span><strong>{{ stats.traffic or 0 }}</strong></div><div class="metric"><span>关系已验证</span><strong>{{ stats.verified or 0 }}</strong></div><div class="metric"><span>已归档可信</span><strong>{{ stats.trusted or 0 }}</strong></div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <form method="GET" action="{{ url_for('web.interface_chains') }}" class="layui-form toolbar">
+            <select name="project_id" style="min-width:260px">{% for project in projects %}<option value="{{ project.id }}" {% if project.id == project_id %}selected{% endif %}>{{ project.name }}（{{ project.count }} 接口）</option>{% endfor %}</select>
+            <input class="layui-input" name="q" value="{{ filters.q }}" placeholder="搜索资源组、接口或参数">
+            <select name="origin"><option value="">全部数据来源</option><option value="document" {% if filters.origin == 'document' %}selected{% endif %}>接口文档</option><option value="mixed" {% if filters.origin == 'mixed' %}selected{% endif %}>文档 + 流量</option><option value="traffic" {% if filters.origin == 'traffic' %}selected{% endif %}>纯流量</option></select>
+            <select name="readiness"><option value="">全部链路状态</option>{% for key,label in readiness_labels.items() %}<option value="{{ key }}" {% if filters.readiness == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <select name="decision"><option value="">全部人工结论</option>{% for key,label in decision_options %}<option value="{{ key }}" {% if filters.decision == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <select name="sort"><option value="confidence" {% if filters.sort == 'confidence' %}selected{% endif %}>可信度优先</option><option value="traffic" {% if filters.sort == 'traffic' %}selected{% endif %}>真实使用频率</option><option value="endpoints" {% if filters.sort == 'endpoints' %}selected{% endif %}>接口数量</option><option value="name" {% if filters.sort == 'name' %}selected{% endif %}>资源组名称</option></select>
+            <select name="limit" style="min-width:90px"><option value="10" {% if limit == 10 %}selected{% endif %}>10 条</option><option value="20" {% if limit == 20 %}selected{% endif %}>20 条</option><option value="50" {% if limit == 50 %}selected{% endif %}>50 条</option></select>
+            <button class="layui-btn" type="submit">筛选</button>
+        </form>
+    </section>
+
+    {% for row in rows %}
+    <article class="chain-card">
+        <header class="card-head">
+            <div><div class="family">{{ row.family }}</div><div class="muted">{{ row.strategy_label }}</div><span class="badge {% if row.origin == 'mixed' %}good{% elif row.origin == 'document' %}info{% else %}warn{% endif %}">{{ '文档 + 流量' if row.origin == 'mixed' else ('接口文档' if row.origin == 'document' else '纯流量') }}</span><span class="badge {% if row.readiness in ['verified','relation_ready'] %}good{% elif row.readiness == 'needs_relation' %}bad{% else %}warn{% endif %}">{{ readiness_labels.get(row.readiness, row.readiness) }}</span>{% if row.manual_decision %}<span class="badge info">人工：{{ row.manual_decision }}</span>{% endif %}</div>
+            <div><span class="badge">可信度 {{ row.display_confidence }}%</span><span class="badge">接口 {{ row.endpoint_count }}</span><span class="badge">字段边 {{ row.link_count }}</span><span class="badge">流量命中 {{ row.traffic_hits }}</span></div>
+        </header>
+        <div class="sequence">
+            {% for endpoint in row.sequence %}<div class="step"><span class="step-index">{{ loop.index }}</span><strong>{{ action_labels.get(endpoint.action, endpoint.action) }}</strong><span class="path"><span class="method {{ endpoint.method }}">{{ endpoint.method }}</span> {{ endpoint.path }}</span><div class="muted">{{ endpoint.name or endpoint.description or '无接口说明' }}</div>{% if endpoint.hit_count %}<span class="badge good">流量 {{ endpoint.hit_count }}</span>{% endif %}{% if endpoint.required_count %}<span class="badge">必填 {{ endpoint.required_count }}</span>{% endif %}</div>{% else %}<div class="muted">当前资源组尚未形成可排序的关键步骤。</div>{% endfor %}
+        </div>
+        <div class="body-grid">
+            <section><div class="section-title">字段传递</div><table class="mapping-table"><thead><tr><th>来源接口</th><th>字段映射</th><th>下游接口</th><th>证据</th></tr></thead><tbody>{% for link in row.links[:12] %}<tr><td>{{ link.from }}</td><td><code>{{ link.source_parameter }}</code> → <code>{{ link.target_parameter }}</code><br><span class="muted">规范参数 {{ link.parameter }}</span></td><td>{{ link.to }}</td><td><span class="badge {% if link.status in ['trusted','verified'] %}good{% else %}warn{% endif %}">{{ '已验证关系' if link.origin == 'relation' else '文档候选' }}</span></td></tr>{% else %}<tr><td colspan="4" class="muted">尚未找到可传递字段。先到“关系验证”发现并确认资源标识。</td></tr>{% endfor %}</tbody></table>{% if row.links|length > 12 %}<div class="muted">另有 {{ row.links|length - 12 }} 条字段边已折叠。</div>{% endif %}</section>
+            <section><div class="section-title">系统下一步</div><div class="next-action">{{ row.next_action }}</div><div class="muted" style="margin-top:8px">文档候选只证明结构上可能成链；只有验证通过的参数关系才会作为执行时传值依据。</div><a class="layui-btn layui-btn-primary layui-btn-sm" style="margin-top:9px" href="{{ url_for('web.parameter_relations', project_id=project_id) }}">进入关系验证</a></section>
+        </div>
+        <details class="drawer"><summary>全部接口与结构摘要（{{ row.endpoint_count }}）</summary><div class="drawer-body"><table class="endpoint-table"><thead><tr><th>动作</th><th>接口</th><th>请求 / 响应字段</th><th>标识字段</th><th>流量</th></tr></thead><tbody>{% for endpoint in row.endpoints %}<tr><td>{{ action_labels.get(endpoint.action, endpoint.action) }}</td><td><span class="method {{ endpoint.method }}">{{ endpoint.method }}</span> {{ endpoint.path }}<div class="muted">{{ endpoint.name }}</div></td><td>请求 {{ endpoint.request_count }} / 响应 {{ endpoint.response_count }}{% if endpoint.required_count %}<br>必填 {{ endpoint.required_count }}{% endif %}</td><td>{% for field in endpoint.response_ids %}<span class="badge good">产出 {{ field }}</span>{% endfor %}{% for field in endpoint.request_ids %}<span class="badge">消费 {{ field }}</span>{% endfor %}</td><td>{{ endpoint.hit_count }} 次<br><span class="muted">{{ endpoint.sample_sources|join(', ') }}</span></td></tr>{% endfor %}</tbody></table></div></details>
+        <details class="drawer"><summary>人工归档与纠偏</summary><div class="drawer-body"><form method="POST" action="{{ url_for('web.interface_chains') }}" class="layui-form feedback-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="chain_key" value="{{ row.key }}"><input type="hidden" name="strategy" value="{{ row.strategy }}"><input type="hidden" name="origin" value="{{ row.origin }}"><input type="hidden" name="q" value="{{ filters.q }}"><input type="hidden" name="filter_origin" value="{{ filters.origin }}"><input type="hidden" name="filter_readiness" value="{{ filters.readiness }}"><input type="hidden" name="filter_decision" value="{{ filters.decision }}"><input type="hidden" name="sort" value="{{ filters.sort }}"><input type="hidden" name="page" value="{{ page }}"><input type="hidden" name="limit" value="{{ limit }}"><div><label>人工结论</label><select name="decision">{% for key,label in decision_options %}<option value="{{ key }}" {% if row.feedback and row.feedback.decision == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div><label>阻塞类型</label><select name="blocker_class">{% for key,label in blocker_options %}<option value="{{ key }}" {% if row.feedback and row.feedback.blocker_class == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div><label>人工可信度（0-1）</label><input class="layui-input" name="confidence" value="{{ row.feedback.confidence if row.feedback and row.feedback.confidence is not none else '' }}"></div><div><label>机器可信度</label><input class="layui-input" value="{{ row.confidence }}%" disabled></div><div class="wide"><label>人工说明</label><textarea class="layui-textarea" name="note" placeholder="为什么可归档、哪里误判或适用边界">{{ row.feedback.note if row.feedback else '' }}</textarea></div><div class="wide"><label>缺少的数据 / 认证 / Host / 前置条件</label><textarea class="layui-textarea" name="missing_data">{{ row.feedback.missing_data if row.feedback else '' }}</textarea></div><button class="layui-btn wide" type="submit" {% if not can_manage %}disabled{% endif %}>保存链路结论</button></form></div></details>
+    </article>
+    {% else %}
+    <section class="panel empty"><strong>当前筛选条件下没有链路候选。</strong><div class="muted">若项目刚导入，先在“关系验证”执行发现；只有一个接口的资源组不会被伪装成链路。</div></section>
+    {% endfor %}
+    {% if filtered_count %}<section class="panel toolbar" style="justify-content:space-between"><div class="muted">第 {{ page + 1 }} 页；筛选后 {{ filtered_count }} 条，当前显示 {{ rows|length }} 条。</div><div>{% if has_prev %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.interface_chains', project_id=project_id, q=filters.q, origin=filters.origin, readiness=filters.readiness, decision=filters.decision, sort=filters.sort, limit=limit, page=page-1) }}">上一页</a>{% endif %} {% if has_next %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.interface_chains', project_id=project_id, q=filters.q, origin=filters.origin, readiness=filters.readiness, decision=filters.decision, sort=filters.sort, limit=limit, page=page+1) }}">下一页</a>{% endif %}</div></section>{% endif %}
+</div>
+{% endblock %}

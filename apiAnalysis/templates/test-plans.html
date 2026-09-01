@@ -1,0 +1,186 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body">
+    {% if notice %}
+        <blockquote class="layui-elem-quote {% if notice.level == 'success' %}layui-quote-nm{% endif %}">
+            {{ notice.text }}
+        </blockquote>
+    {% endif %}
+
+    <div class="layui-row">
+        <form action="{{ url_for('web.test_plans') }}" method="GET" class="layui-form layui-col-space5">
+            <div class="layui-input-inline">
+                <select name="project_id" lay-filter="project">
+                    <option value="">选择项目</option>
+                    {% for p in projects %}
+                        <option value="{{ p.project_id }}" {% if project_id == p.project_id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline">
+                <select name="status">
+                    <option value="">全部状态</option>
+                    {% for s in plan_statuses %}
+                        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="layui-input-inline">
+                <button class="layui-btn" lay-submit lay-filter="search">筛选</button>
+            </div>
+        </form>
+    </div>
+
+    {% if can_manage and project_id %}
+    <fieldset class="layui-elem-field">
+        <legend>创建测试计划</legend>
+        <div class="layui-field-box">
+            <form action="{{ url_for('web.test_plans') }}" method="POST" class="layui-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <input type="hidden" name="action" value="create">
+                <div class="layui-form-item">
+                    <div class="layui-inline">
+                        <input type="text" name="name" required placeholder="计划名称" class="layui-input">
+                    </div>
+                    <div class="layui-inline">
+                        <input type="text" name="check_type" required value="authenticated_snapshot_batch" placeholder="检查类型" class="layui-input">
+                    </div>
+                    <div class="layui-inline">
+                        <select name="env_id">
+                            <option value="">选择环境</option>
+                            {% for env in environments %}
+                            <option value="{{ env.env_id }}">{{ env.name or env.env_id }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="layui-inline">
+                        <select name="auth_mode">
+                            <option value="inherit">inherit</option>
+                            <option value="anonymous">anonymous</option>
+                            <option value="account">account</option>
+                        </select>
+                    </div>
+                    <div class="layui-inline">
+                        <select name="auth_profile_id">
+                            <option value="">选择认证方案（account 必选）</option>
+                            {% for profile in auth_profiles %}
+                            <option value="{{ profile.profile_id }}">
+                                {{ profile.name }} · {{ profile.env_id }} · {{ profile.account_key }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="layui-inline">
+                        <select name="adapter_id">
+                            <option value="">自动选择执行适配器</option>
+                            <option value="snapshot_batch">snapshot_batch</option>
+                            <option value="authenticated_snapshot_batch">authenticated_snapshot_batch</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <div class="layui-inline">
+                        <input type="text" name="pathids" required placeholder="PathId，逗号分隔" class="layui-input" style="width:260px;">
+                    </div>
+                    <div class="layui-inline">
+                        <input type="number" name="request_budget" value="1" min="1" max="1000" required placeholder="业务请求预算" class="layui-input" style="width:150px;">
+                    </div>
+                    <div class="layui-inline">
+                        <input type="number" name="request_timeout_seconds" value="15" min="1" max="300" required placeholder="超时（秒）" class="layui-input" style="width:130px;">
+                    </div>
+                    <div class="layui-inline">
+                        <input type="text" name="description" placeholder="描述" class="layui-input">
+                    </div>
+                    <div class="layui-inline">
+                        <button class="layui-btn" lay-submit>创建</button>
+                    </div>
+                </div>
+                <div style="color:#667085;font-size:12px;">
+                    创建后先激活，再由“一键执行”生成全新请求快照并进入持久化队列。请求预算仅统计业务请求；认证前置请求会单独展示。
+                </div>
+            </form>
+        </div>
+    </fieldset>
+    {% endif %}
+
+    <table class="layui-table">
+        <thead>
+            <tr>
+                <th>名称</th><th>版本</th><th>状态</th><th>环境 / 范围</th><th>检查类型</th><th>认证模式</th><th>创建时间</th><th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for plan in plans %}
+            <tr>
+                <td>{{ plan.name }}</td>
+                <td>v{{ plan.version }}</td>
+                <td>
+                    {% if plan.status == 'active' %}
+                        <span class="layui-badge layui-bg-green">active</span>
+                    {% elif plan.status == 'draft' %}
+                        <span class="layui-badge layui-bg-orange">draft</span>
+                    {% else %}
+                        <span class="layui-badge layui-bg-gray">archived</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div>{{ plan.env_id or '-' }}</div>
+                    <div style="color:#667085;font-size:12px;">PathId: {{ (plan.scope or {}).get('pathids', [])|join(', ') or '-' }}；预算 {{ plan.request_budget or '-' }}</div>
+                </td>
+                <td>{{ plan.check_type }}</td>
+                <td>
+                    <div>{{ plan.auth_mode }}</div>
+                    {% if plan.auth_profile_id %}
+                    <div style="color:#667085;font-size:12px;">{{ plan.auth_profile_id }}</div>
+                    {% endif %}
+                </td>
+                <td>{{ plan.ctime.strftime('%Y-%m-%d %H:%M') if plan.ctime else '' }}</td>
+                <td>
+                    {% if can_manage %}
+                        {% if plan.status == 'active' %}
+                        <form action="{{ url_for('web.test_plans') }}" method="POST" style="display:inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="project_id" value="{{ project_id }}">
+                            <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                            <input type="hidden" name="action" value="execute">
+                            <button class="layui-btn layui-btn-xs" type="submit">一键执行</button>
+                        </form>
+                        {% endif %}
+                        {% if plan.status == 'draft' %}
+                        <form action="{{ url_for('web.test_plans') }}" method="POST" style="display:inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="project_id" value="{{ project_id }}">
+                            <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                            <input type="hidden" name="action" value="activate">
+                            <button class="layui-btn layui-btn-xs">激活</button>
+                        </form>
+                        {% endif %}
+                        {% if plan.status != 'archived' %}
+                        <form action="{{ url_for('web.test_plans') }}" method="POST" style="display:inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="project_id" value="{{ project_id }}">
+                            <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                            <input type="hidden" name="action" value="archive">
+                            <button class="layui-btn layui-btn-xs layui-btn-warm">归档</button>
+                        </form>
+                        {% endif %}
+                        <form action="{{ url_for('web.test_plans') }}" method="POST" style="display:inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="project_id" value="{{ project_id }}">
+                            <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                            <input type="hidden" name="action" value="new_version">
+                            <button class="layui-btn layui-btn-xs layui-btn-normal">新版本</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not plans %}
+            <tr><td colspan="8" style="text-align:center;color:#999;">暂无测试计划{% if not project_id %}，请先选择项目{% endif %}</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

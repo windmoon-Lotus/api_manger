@@ -1,0 +1,22 @@
+{% if row %}
+<div class="identity-grid">
+    <div><div class="section-label">机器判断依据</div>{% for reason in row.rule.reasons %}<span class="badge">{{ reason }}</span>{% endfor %}</div>
+    <div><div class="section-label">归一化定位</div>{% for key in row.canonical_keys %}<span class="badge info">规范键 {{ key }}</span>{% endfor %}{% for alias in row.aliases %}<span class="badge">{{ alias }}</span>{% endfor %}<details><summary>原始字段路径 {{ row.raw_paths|length }} 个</summary>{% for path in row.raw_paths %}<span class="badge">{{ path }}</span>{% endfor %}</details></div>
+</div>
+{% for endpoint in endpoints %}
+<details class="endpoint-detail">
+    <summary><span class="method {{ endpoint.method }}">{{ endpoint.method }}</span><strong>{{ endpoint.path }}</strong> <span class="badge info">{{ endpoint.source_label }}</span>{% if endpoint.sample_count %}<span class="badge good">样本 {{ endpoint.sample_count }}</span>{% endif %}</summary>
+    <div class="endpoint-body">
+        <div class="endpoint-meta"><span class="badge">接口 {{ endpoint.pathid }}</span>{% if endpoint.domain %}<span class="badge">{{ endpoint.domain }}</span>{% endif %}{% for code in endpoint.response_status_codes %}<span class="badge">HTTP {{ code }}</span>{% endfor %}</div>
+        <div><strong>{{ endpoint.name or '未命名接口' }}</strong></div><div class="muted">{{ endpoint.description or '接口文档未提供说明' }}</div>
+        <div class="schema-grid" style="margin-top:10px;">
+            <div><div class="section-label">请求参数 {{ endpoint.request_parameter_count }}</div><table class="schema-table"><thead><tr><th>位置</th><th>字段 / 类型</th><th>说明 / 示例</th></tr></thead><tbody>{% for field in endpoint.request_parameters %}<tr class="{% if field.highlight %}highlight{% endif %}"><td>{{ field.position }}{% if field.required %} · 必填{% endif %}</td><td><code>{{ field.display_path }}</code><br><span class="muted">{{ field.type }}</span></td><td>{{ field.description or '-' }}{% if field.examples %}<div class="muted">示例：{{ field.examples }}</div>{% endif %}</td></tr>{% else %}<tr><td colspan="3" class="muted">没有结构化请求字段</td></tr>{% endfor %}</tbody></table></div>
+            <div><div class="section-label">响应字段 {{ endpoint.response_parameter_count }}</div><table class="schema-table"><thead><tr><th>位置</th><th>字段 / 类型</th><th>说明 / 示例</th></tr></thead><tbody>{% for field in endpoint.response_parameters %}<tr class="{% if field.highlight %}highlight{% endif %}"><td>{{ field.position }}</td><td><code>{{ field.display_path }}</code><br><span class="muted">{{ field.type }}</span></td><td>{{ field.description or '-' }}{% if field.examples %}<div class="muted">示例：{{ field.examples }}</div>{% endif %}</td></tr>{% else %}<tr><td colspan="3" class="muted">没有结构化响应字段</td></tr>{% endfor %}</tbody></table></div>
+        </div>
+        {% for sample in endpoint.samples %}
+        <details class="sample"><summary class="sample-head"><span class="badge info">{{ sample.source_label }}</span> {{ sample.method }} {{ sample.url or endpoint.path }} {% if sample.status_code %}<span class="badge {% if sample.status_code < 400 %}good{% else %}bad{% endif %}">HTTP {{ sample.status_code }}</span>{% endif %} <span class="muted">命中 {{ sample.hit_count }} 次 · {{ sample.captured_at }}</span></summary><div class="sample-grid"><div><strong>Query</strong><pre>{{ sample.query_pretty or '{}' }}</pre></div><div><strong>Header（认证值已脱敏）</strong><pre>{{ sample.headers_pretty or '{}' }}</pre></div><div><strong>Request body</strong><pre>{{ sample.body_pretty or '无请求体' }}</pre></div><div><strong>Response sample</strong><pre>{{ sample.response_pretty or '未保存响应样本' }}</pre></div></div></details>
+        {% else %}<div class="muted" style="margin-top:10px;">当前只有接口文档证据，没有可展示的流量样本。</div>{% endfor %}
+    </div>
+</details>
+{% else %}<div class="muted">暂无可展开的代表接口。</div>{% endfor %}
+{% else %}<div class="muted">参数资产不存在或尚未生成。</div>{% endif %}

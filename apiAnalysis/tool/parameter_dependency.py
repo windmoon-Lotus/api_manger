@@ -82,12 +82,35 @@ def select_value(values: Iterable[Any]) -> Any:
     return None
 
 
-def _archive_value(names: List[str], pathid: int, account_id: Optional[str], exact_path: bool) -> Tuple[Any, Optional[parameter_archive]]:
+def trusted_relation_value(relation: Any) -> Any:
+    """Return one scalar only from a verified or manually trusted relation."""
+    if relation is None or not (
+        bool(getattr(relation, "verified", False))
+        or str(getattr(relation, "manual_decision", "") or "") == "trusted"
+    ):
+        return None
+    for value in list(getattr(relation, "evidence", []) or []):
+        if value is None or isinstance(value, (dict, list, tuple, set)):
+            continue
+        if isinstance(value, (str, int, float, bool)) and value != "":
+            return value
+    return None
+
+
+def _archive_value(names: List[str], pathid: int, account_id: Optional[str], exact_path: bool,
+                   project_id: Optional[str] = None, env_id: Optional[str] = None) -> Tuple[Any, Optional[parameter_archive]]:
     query: Dict[str, Any] = {"parameter__in": names}
+    if project_id:
+        query["project_id"] = project_id
+    if env_id:
+        query["env_id"] = env_id
     if account_id:
         query["account_id"] = account_id
     candidates = list(parameter_archive.objects(**query))
-    if account_id and not candidates:
+    # Legacy global fallback is retained only when no explicit project/env
+    # boundary exists. New project-scoped requests must never borrow values
+    # from another context silently.
+    if account_id and not candidates and not project_id and not env_id:
         candidates = list(parameter_archive.objects(parameter__in=names))
 
     best = None
@@ -125,14 +148,20 @@ def _candidate_role(pathid: int, parameter: str) -> Dict[str, Any]:
     }
 
 
-def _relation_value(parameter: str, pathid: int) -> Tuple[Any, Optional[parameter_relation]]:
+def _relation_value(parameter: str, pathid: int, *, project_id: Optional[str] = None,
+                    env_id: Optional[str] = None) -> Tuple[Any, Optional[parameter_relation]]:
+    context = {}
+    if project_id:
+        context["project_id"] = str(project_id)
+    if env_id:
+        context["env_id"] = str(env_id)
     for name in [parameter, leaf(parameter), canonical_name(parameter)]:
-        rel = parameter_relation.objects(parameter=name, req_pathid=pathid, verified=True).order_by("-score").first()
-        if rel and rel.evidence:
-            return select_value(rel.evidence), rel
-    rel = parameter_relation.objects(parameter=parameter, req_pathid=pathid, score__gte=RELATION_CONFIDENCE_FLOOR).order_by("-score").first()
-    if rel and rel.evidence:
-        return select_value(rel.evidence), rel
+        for rel in parameter_relation.objects(
+            parameter=name, req_pathid=pathid, **context
+        ).order_by("-verified", "-score").limit(20):
+            value = trusted_relation_value(rel)
+            if value is not None:
+                return value, rel
     return None, None
 
 
@@ -142,6 +171,8 @@ def resolve_parameter_value(
     account_id: Optional[str] = None,
     *,
     allow_alias: bool = True,
+    project_id: Optional[str] = None,
+    env_id: Optional[str] = None,
 ) -> Tuple[Any, Dict[str, Any]]:
     """
     Return `(value, source_meta)`.
@@ -155,7 +186,9 @@ def resolve_parameter_value(
     low = leaf(name)
     role_meta = _candidate_role(pathid, name)
 
-    value, relation = _relation_value(name, pathid)
+    value, relation = _relation_value(
+        name, pathid, project_id=project_id, env_id=env_id,
+    )
     if value not in (None, "", [], {}):
         return value, {
             "source": "parameter_relation",
@@ -167,7 +200,7 @@ def resolve_parameter_value(
         }
 
     exact_names = list({name, low})
-    value, archive = _archive_value(exact_names, pathid, account_id, exact_path=(low == "id"))
+    value, archive = _archive_value(exact_names, pathid, account_id, exact_path=(low == "id"), project_id=project_id, env_id=env_id)
     if value not in (None, "", [], {}):
         return value, {
             "source": "parameter_archive",
@@ -182,7 +215,7 @@ def resolve_parameter_value(
     canonical = canonical_name(name)
     if allow_alias and low not in DO_NOT_ALIAS and canonical != low:
         aliases = sorted(CANONICAL_ALIASES.get(canonical, {canonical}))
-        value, archive = _archive_value(aliases, pathid, account_id, exact_path=False)
+        value, archive = _archive_value(aliases, pathid, account_id, exact_path=False, project_id=project_id, env_id=env_id)
         if value not in (None, "", [], {}):
             return value, {
                 "source": "parameter_dependency_alias",

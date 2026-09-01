@@ -32,6 +32,51 @@ def endpoints_from_list(path: Path, statuses: Iterable[str] = ()) -> List[Dict[s
     return endpoints
 
 
+def run_apifox_list(apifox_cmd: str, project_id: int, timeout: int) -> Dict[str, Any]:
+    """Read the current endpoint list without persisting CLI output."""
+    cmd = [apifox_cmd, "endpoint", "list", "--project", str(project_id)]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=apifox_cmd.lower().endswith((".cmd", ".bat")),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise ValueError("Apifox endpoint list timed out") from None
+    if completed.returncode != 0:
+        raise ValueError(
+            "Apifox endpoint list failed: {}".format(
+                (completed.stderr.strip() or completed.stdout.strip())[:300]
+            )
+        )
+    try:
+        document = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Apifox endpoint list returned invalid JSON") from exc
+    if not document.get("success") or not isinstance(document.get("data"), list):
+        raise ValueError("Apifox endpoint list returned no data")
+    return document
+
+
+def endpoints_from_document(document: Dict[str, Any],
+                            statuses: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    wanted = {item.strip().lower() for item in statuses if item.strip()}
+    endpoints = []
+    for item in document.get("data") or []:
+        if not item.get("id"):
+            continue
+        status = str(item.get("status") or "").lower()
+        if wanted and status not in wanted:
+            continue
+        endpoints.append(item)
+    return endpoints
+
+
 def run_apifox_get(apifox_cmd: str, project_id: int, endpoint_id: int, timeout: int) -> Dict[str, Any]:
     cmd = [apifox_cmd, "endpoint", "get", str(endpoint_id), "--project", str(project_id)]
     try:
@@ -81,10 +126,17 @@ def pull_one(apifox_cmd: str, project_id: int, endpoint_id: int, out_path: Path,
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pull full Apifox endpoint detail JSON files from an endpoint list.")
     parser.add_argument("--project", type=int, required=True)
-    parser.add_argument("--endpoint-list", required=True)
+    parser.add_argument(
+        "--endpoint-list",
+        help="Cached endpoint-list JSON. Omit to read the current list from Apifox.",
+    )
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--apifox-cmd", default="", help="Apifox executable. Defaults to apifox.cmd on Windows when available.")
     parser.add_argument("--statuses", default="released,deprecated,obsolete", help="Comma-separated statuses to include; empty means all.")
+    parser.add_argument(
+        "--all-statuses", action="store_true",
+        help="Include developing/testing and any other current endpoint status.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--workers", type=int, default=1, help="Concurrent apifox endpoint get workers.")
@@ -94,8 +146,19 @@ def main() -> int:
     apifox_cmd = args.apifox_cmd or shutil.which("apifox.cmd") or shutil.which("apifox") or "apifox"
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    statuses = [item.strip() for item in args.statuses.split(",")] if args.statuses else []
-    endpoints = endpoints_from_list(Path(args.endpoint_list), statuses=statuses)
+    statuses = (
+        [] if args.all_statuses
+        else ([item.strip() for item in args.statuses.split(",")] if args.statuses else [])
+    )
+    if args.endpoint_list:
+        endpoints = endpoints_from_list(Path(args.endpoint_list), statuses=statuses)
+        list_source = "cached"
+    else:
+        endpoints = endpoints_from_document(
+            run_apifox_list(apifox_cmd, args.project, args.request_timeout),
+            statuses=statuses,
+        )
+        list_source = "live"
     if args.limit and args.limit > 0:
         endpoints = endpoints[: args.limit]
 
@@ -135,6 +198,7 @@ def main() -> int:
                     failures.append(detail)
 
     summary = {
+        "list_source": list_source,
         "endpoints": len(endpoints),
         "pulled": pulled,
         "skipped": skipped,

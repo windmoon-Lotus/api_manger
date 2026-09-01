@@ -1,144 +1,137 @@
-# 项目介绍与代码导航
+# AuthCheck API Manager 项目总览
 
-## 项目简介
-`api_manger` 是一个面向 API 数据治理与安全测试的工具集，提供两类能力：
+## 项目定位
 
-1. `CLI` 数据处理链路：导入 HAR / mitmproxy / OpenAPI / Postman 数据，完成参数拆解、接口分类、参数归档、弱关联推断、请求组包与越权任务生成/执行。
-2. `Web` 管理界面：查看与编辑原始接口数据，执行运维面板操作（导入、重算、任务执行），并管理版本/漏洞/测试用例与账号配置。
+这是一个面向 API 资产治理、参数依赖分析和授权边界验证的个人开源项目。
+核心价值不是“发送一批 HTTP 请求”，而是把每次测试固化成可解释、可复现、
+可复测的证据链。
 
-项目核心以 Flask + MongoEngine + Redis 组织，入口清晰，便于按“数据流”快速定位代码。
+当前运行原则：
 
-## 顶层入口
-- `run_web.py`：Web 启动入口（读取 `HOST/PORT/DEBUG`）。
-- `apiAnalysis/main.py`：CLI 入口（参数解析与任务编排）。
-- `apiAnalysis/__init__.py`：`create_app()`，Flask 初始化、蓝图注册、Mongo/Redis/定时任务初始化。
+1. 导入只解析和归档，不发送业务请求。
+2. 所有网络执行都必须先生成不可变快照，再进入统一调度队列。
+3. Web 管理配置和队列；worker 执行业务 API 测试；scheduler 只做恢复和维护。
+4. 认证秘密不进入 Mongo、日志、fixture、结果摘要或 Git。
+5. 候选关系不等于已验证关系；只有调度执行证据或显式人工信任才能提升状态。
 
-## 目录导航（按模块）
-- `apiAnalysis/ai/`：AI 研判模块（schema、prompt、HTTP client、judge service）。
-- `apiAnalysis/common/`：通用函数、装饰器、国际化等基础能力。
-- `apiAnalysis/conf/`：日志与配置项（Mongo/Redis/密钥/AI 配置）。
-- `apiAnalysis/core/`：扫描流程、认证识别（`identify/`）与后台任务。
-- `apiAnalysis/db/`：MongoEngine 模型定义（`collection.py`）与数据入库/参数拆解（`save.py`）。
-- `apiAnalysis/input/`：HAR、mitmproxy 等输入解析器。
-- `apiAnalysis/model/`：请求/响应模型与异常定义。
-- `apiAnalysis/rule/`：规则层（分类、参数关联、重放验证、越权引擎）。
-- `apiAnalysis/tool/`：请求组包、payload 插入、JSON 扁平化等工具。
-- `apiAnalysis/web/`：Flask 蓝图与路由实现（`web/api/ws`）。
-- `apiAnalysis/templates/`：Jinja2 页面模板。
-- `apiAnalysis/static/`：静态资源（CSS/JS/字体等）。
+## 当前数据流
 
-## 代码导航（按业务场景）
+```text
+HAR / OpenAPI / Postman / Apifox
+              |
+              v
+        import.v1 导入契约
+              |
+              v
+  API 资产 + 参数事实 + 候选关系
+              |
+              v
+  人工选择策略、主体、环境、fixture
+              |
+              v
+   不可变请求快照 + security_test_run
+              |
+              v
+       execution worker 执行
+              |
+              v
+  统一结果 + 证据摘要 + 复核/漏洞闭环
+```
 
-### 1) 数据导入与入库
-- CLI 调度：`apiAnalysis/main.py`
-- 入库函数：
-  - `apiAnalysis/db/save.py::data_generate_mongodb`（flow/har）
-  - `apiAnalysis/db/save.py::data_generate_openapi`
-  - `apiAnalysis/db/save.py::data_generate_postman`
-- 输入解析：
-  - `apiAnalysis/input/har_capture_reader.py`
-  - `apiAnalysis/input/mitmproxy_capture_reader.py`
+导入和验证故意分成两步。导入阶段保留历史观测、参数位置和资源链候选，
+但不会根据历史状态码把候选关系标成 `verified`。验证阶段才会使用选定环境和
+认证主体发请求，并把状态码、资源身份匹配、快照引用和原因码写入统一结果契约。
 
-### 2) 参数拆解、归档与关联
-- 参数拆解：`apiAnalysis/db/save.py::parameter_disassemble_mongodb`
-- 参数基础数据：`apiAnalysis/db/save.py::parameter_date_mongodb`
-- 参数归档：`apiAnalysis/rule/analysis.py::analysis.parameter_archive`
-- 弱关联推断（两阶段）：`apiAnalysis/rule/analysis.py::analysis.infer_weak_relations`
-  - 阶段1：候选召回（leaf/value overlap/name fallback）
-  - 阶段2：评分过滤（`min_relation_score`）
-- 值清洗与低信息过滤：`analysis._normalize_relation_values`（含参数黑名单）
-- 关联验证：
-  - 规则验证：`analysis.verify_weak_relations`
-  - 真实重放验证（预算阀门）：`analysis.verify_weak_relations_real(limit, min_score)`
+## 四个独立进程
 
-### 2.1) 接口分类（打分版）
-- 分类入口：`apiAnalysis/rule/analysis.py::analysis.classify_raw_data`
-- 分类器：`analysis.classify_with_score`
-- 分类输出：`action + class_confidence + class_reason_codes`
-- 规则标识：`raw_data.rule = "path_score_v1"`
+- Web：`python tools/run_web_server.py`
+- 执行 worker：`python tools/run_execution_worker.py --poll-seconds 5`
+- 参数关系 worker：`python tools/run_relation_analysis_worker.py --poll-seconds 5`
+- 维护 scheduler：`python tools/run_maintenance_scheduler.py --poll-seconds 30`
 
-### 3) 请求组包与重放
-- 组包构建：`apiAnalysis/tool/compose_request.py`
-- 组包触发：`apiAnalysis/rule/analysis.py::analysis.build_request_compose`
-- Web 端单条重放：`apiAnalysis/web/web.py::rawdata`（包含 replay 处理分支）
+Flask 应用工厂不会启动线程、worker 或定时器。旧 Workspace 捕获、同步重放和
+旧 privilege task 运行链已经退出当前运行时；历史模型只用于显式数据迁移。
 
-### 4) 越权任务链路
-- 任务编排入口：`apiAnalysis/rule/analysis.py`
-  - `prepare_privilege_tasks`
-  - `execute_privilege_tasks`
-  - `execute_ai_stub`
-  - `execute_ai_http`
-- 核心引擎：`apiAnalysis/rule/privilege.py`
-  - `TargetFilter`
-  - `PrivilegeEngine.prepare_tasks / execute_pending / execute_task`
-  - `_judge`（规则证据与评分）
-- 规则评分与融合：
-  - `apiAnalysis/rule/evidence.py`（证据提取）
-  - `apiAnalysis/rule/scoring.py`（规则评分）
-  - `apiAnalysis/rule/fusion.py`（规则+AI 融合）
-- AI 研判服务：
-  - `apiAnalysis/ai/schema.py`（输出规范化）
-  - `apiAnalysis/ai/prompts.py`（提示词模板）
-  - `apiAnalysis/ai/client.py`（HTTP 调用）
-  - `apiAnalysis/ai/judge_service.py`（统一判定入口）
+## 导入契约
 
-### 5) Web 页面与 API 路由
-- 蓝图定义：`apiAnalysis/web/__init__.py`
-  - `bp_web`（页面）
-  - `bp_api`（`/api/*`）
-  - `bp_ws`（`/ws/*`）
-- 页面路由：`apiAnalysis/web/web.py`
-  - 重点页面：`/`、`/rawdata`、`/import-data`、`/ops`、`/parameter-relations`、`/privilege-tasks`
-- API 路由：`apiAnalysis/web/api.py`
-  - 重点接口：`/api/rawdata`、`/api/privilege/tasks`、`/api/version`、`/api/vuln`、`/api/testcase`、`/api/sso/account`
+Web 和 CLI 都调用 `ImportRequest -> execute_import -> ImportOutcome`：
 
-### 6) 主要数据模型（Mongo）
-位于 `apiAnalysis/db/collection.py`：
-- 流量与解析：`PacketData`、`raw_data`、`req_data`、`res_data`
-- 参数分析：`parameter_data`、`parameter_archive`、`parameter_relation`
-- 分类增强字段（`raw_data`）：`class_confidence`、`class_reason_codes`
-- 关联增强字段（`parameter_relation`）：`score`、`reason_codes`
-- 越权任务：`privilege_task`、`privilege_config`、`target_whitelist`
-- 越权任务增强字段（`privilege_task`）：
-  `rule_score`、`ai_score`、`final_score`、`final_result`、
-  `rule_reason_codes`、`ai_reason_codes`、`prompt_ver`、`model_ver`
-- 业务管理：`api_version`、`vuln_record`、`test_case`
-- 安全运行管理：`security_test_run`、`security_test_result`
-- 工作区与账号：`Workspace`、`WorkspaceAuth`、`WorkspaceSso`、`SsoAccount`
+- 每次导入只有一个 `ImportRun` 生命周期；
+- 只处理本批次产生的 raw ID/path ID；
+- 空批次不会回退成全库分析；
+- 参数归档是离线、批次限定的数据转换；
+- OpenAPI、Postman 和 Apifox 文档导入必须绑定项目。
 
-## 快速运行命令
-- 启动 Web：
-  ```bash
-  python run_web.py
-  ```
-- 导入 HAR 并执行参数链路：
-  ```bash
-  python -m apiAnalysis.main -i <file.har> -f har -p --quiet
-  ```
-- 生成并执行越权任务：
-  ```bash
-  python -m apiAnalysis.main --privilege-tasks --privilege-exec --privilege-limit 20
-  ```
-- 真实重放验证弱关联：
-  ```bash
-  python -m apiAnalysis.main --verify-relations-real --verify-limit 200 --verify-min-score 60
-  ```
-- 调用 AI 研判并回写：
-  ```bash
-  python -m apiAnalysis.main --ai-http --ai-url <endpoint> --ai-key <token> --ai-limit 20
-  ```
-- 控制输出与日志：
-  ```bash
-  python -m apiAnalysis.main --quiet
-  python -m apiAnalysis.main --log-level WARNING
-  ```
+示例：
 
-## 评估工具
-- 越权判定评估：`tools/eval_privilege.py`
-- 分类与关联评估：`tools/eval_class_relation.py`
-- 回归测试：`tests/test_phase2_regression.py`
+```powershell
+python -m apiAnalysis.main `
+  --format har `
+  --input .\capture.har `
+  --project-id <project-id> `
+  --env-id test `
+  --parameter-disassemble
+```
 
-## 配置提示
-- 基础连接配置：`apiAnalysis/conf/secret.py`
-- AI 配置：`apiAnalysis/conf/conf.py`（`ai_endpoint`、`ai_api_key`、`ai_timeout`）
-- 认证策略：`apiAnalysis/core/identify/`（SSO / Direct）
+## 参数关系验证
+
+候选关系描述“响应中的资源值可能被另一个请求消费”。验证时：
+
+1. 冻结 source/consumer 端点、typed locator、fixture revision 和认证 profile revision；
+2. 使用 source 主体发送只读请求并临时提取真实值；
+3. 将值注入 consumer 请求的 Path/Query/Header/Cookie/Body 精确位置；
+4. 使用 consumer 主体发送请求；
+5. 丢弃原始值，仅持久化摘要、状态、指纹、原因码和快照引用；
+6. 结果不确定时保持待复核，不能自动冒充验证成功。
+
+批量请求受自动预算、人工批准预算和环境 mutation policy 约束。
+
+## 可扩展授权矩阵
+
+授权模型不是固定双账号，也不是固定“管理员/普通用户”两级。项目可以定义任意数量
+的 `AuthorizationPrincipal`，每个主体绑定一个认证 profile，并携带：
+
+- `role_key`：角色；
+- `privilege_rank`：可选的序关系维度；
+- `scope_key`：租户、组织、部门或区域；
+- `labels`：任意集合标签；
+- `attributes`：项目自定义非敏感属性。
+
+版本化策略通过 selector 组合这些维度，生成：
+
+```text
+资源拥有者 × 访问主体 × 资源链 × 动作
+```
+
+完整矩阵不会静默截断。若 N 个主体、不含 self case、R 个资源组，则需要
+`N × (N - 1) × R` 个 case；超过策略预算会显式拒绝调度。新增主体、角色、层级、
+scope 或属性只需新增数据和规则，不需要修改矩阵核心代码。
+
+详细设计见 `docs/authorization_matrix.md`。
+
+## Fixture 与证据复测
+
+- fixture 只保存非认证业务输入，并使用不可变 revision；
+- fixture 可以切换历史 revision、停用和归档，归档后不可复活；
+- Bearer、Cookie、token、密码、私钥等内容会被拒绝；
+- 漏洞修复后只能调度原证据快照复测；
+- 全部明确通过才进入 `verified_fixed`；重新命中会 `reopened`；不确定结果保持待验证。
+
+## 复核队列来源
+
+复核队列读取 MongoDB `securityTestResult` 集合，由
+`apiAnalysis/tool/result_review.py` 做结果投影、去重和 supersession，再由
+`apiAnalysis/web/views_review_finding.py` 提供页面操作。
+
+## 关键入口
+
+- 应用工厂：`apiAnalysis/__init__.py`
+- 导入契约：`apiAnalysis/import_pipeline.py`
+- 执行契约：`apiAnalysis/tool/execution_contract.py`
+- 调度与 worker：`apiAnalysis/tool/execution_scheduler.py`
+- 参数验证：`apiAnalysis/tool/parameter_validation.py`
+- 授权策略：`apiAnalysis/tool/authorization_policy.py`
+- 授权矩阵：`apiAnalysis/tool/authorization_matrix.py`
+- fixture：`apiAnalysis/tool/request_fixture.py`
+- 复核队列：`apiAnalysis/tool/result_review.py`
+- 修复复测：`apiAnalysis/tool/vulnerability_lifecycle.py`

@@ -1,0 +1,951 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<style>
+    :root {
+        --source-ink: #14213d;
+        --source-muted: #64748b;
+        --source-line: #d8e0ea;
+        --source-soft: #f5f8fb;
+        --source-accent: #008b7a;
+        --source-accent-soft: #e9f8f5;
+        --source-warn: #b45309;
+        --source-warn-soft: #fff7ed;
+        --source-danger: #b42318;
+        --source-danger-soft: #fff1f0;
+    }
+    .source-page {
+        padding: 18px 22px 44px;
+        color: var(--source-ink);
+        background: #f4f7fa;
+        min-height: 100vh;
+    }
+    .source-card {
+        background: #fff;
+        border: 1px solid var(--source-line);
+        margin-bottom: 14px;
+    }
+    .source-header {
+        border-top: 4px solid var(--source-accent);
+        padding: 20px 22px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+    }
+    .source-eyebrow {
+        color: var(--source-accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+    }
+    .source-header h1 {
+        font-size: 26px;
+        line-height: 1.25;
+        margin: 4px 0 6px;
+    }
+    .source-muted {
+        color: var(--source-muted);
+        line-height: 1.6;
+    }
+    .source-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .source-metrics {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .source-metric {
+        padding: 15px 18px;
+        border-right: 1px solid var(--source-line);
+    }
+    .source-metric:last-child { border-right: 0; }
+    .source-metric span {
+        display: block;
+        color: var(--source-muted);
+        font-size: 12px;
+        margin-bottom: 5px;
+    }
+    .source-metric strong {
+        font-size: 23px;
+        line-height: 1;
+    }
+    .source-nav {
+        display: flex;
+        gap: 0;
+        padding: 0 18px;
+        background: var(--source-ink);
+    }
+    .source-nav a {
+        color: #dfe7f1;
+        padding: 14px 20px;
+        border-bottom: 3px solid transparent;
+    }
+    .source-nav a.active {
+        color: #fff;
+        border-bottom-color: #2dd4bf;
+        background: rgba(255,255,255,.04);
+    }
+    .source-notice {
+        padding: 11px 14px;
+        margin-bottom: 14px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+    }
+    .source-notice.success {
+        color: #08695d;
+        border-color: #94d8cd;
+        background: var(--source-accent-soft);
+    }
+    .source-notice.warning {
+        color: var(--source-warn);
+        border-color: #f1c58b;
+        background: var(--source-warn-soft);
+    }
+    .source-notice.error {
+        color: var(--source-danger);
+        border-color: #f0aaa5;
+        background: var(--source-danger-soft);
+    }
+    .section-head {
+        padding: 17px 19px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 15px;
+    }
+    .section-head h2 {
+        font-size: 20px;
+        margin: 0 0 4px;
+    }
+    .source-filter {
+        padding: 12px 18px;
+        border-top: 1px solid var(--source-line);
+        border-bottom: 1px solid var(--source-line);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        background: var(--source-soft);
+    }
+    .source-filter select,
+    .source-filter input {
+        height: 36px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+        padding: 0 10px;
+        min-width: 190px;
+    }
+    .import-panel {
+        margin: 0 18px 16px;
+        border: 1px solid #9cd8cf;
+        background: #fbfffe;
+    }
+    .import-panel summary {
+        cursor: pointer;
+        padding: 13px 15px;
+        font-weight: 700;
+        color: #087466;
+    }
+    .import-body {
+        border-top: 1px solid #c9e9e4;
+        padding: 15px;
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 13px;
+    }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-field label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .form-field input,
+    .form-field select {
+        width: 100%;
+        box-sizing: border-box;
+        height: 38px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+        padding: 0 10px;
+    }
+    .field-help {
+        color: var(--source-muted);
+        font-size: 12px;
+        line-height: 1.55;
+        margin-top: 5px;
+    }
+    .import-submit {
+        margin-top: 14px;
+        padding-top: 13px;
+        border-top: 1px solid var(--source-line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+    }
+    .source-list {
+        padding: 0 18px 18px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .source-item {
+        border: 1px solid var(--source-line);
+        background: #fff;
+    }
+    .source-item-head {
+        padding: 14px 15px;
+        border-bottom: 1px solid var(--source-line);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .source-item h3 {
+        margin: 0 0 4px;
+        font-size: 17px;
+    }
+    .source-type,
+    .source-status {
+        display: inline-block;
+        padding: 3px 7px;
+        border: 1px solid #a7c8e6;
+        background: #f2f8fd;
+        color: #285d8c;
+        font-size: 12px;
+    }
+    .source-status {
+        border-color: #8dd2c7;
+        background: var(--source-accent-soft);
+        color: #087466;
+    }
+    .source-item-body {
+        padding: 13px 15px 15px;
+    }
+    .source-kpis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .source-kpi {
+        background: var(--source-soft);
+        border: 1px solid #e3e9f0;
+        padding: 8px 10px;
+    }
+    .source-kpi span {
+        color: var(--source-muted);
+        font-size: 11px;
+        display: block;
+    }
+    .source-kpi strong { font-size: 16px; }
+    .binding-row {
+        border-top: 1px dashed var(--source-line);
+        padding-top: 9px;
+        margin-top: 9px;
+        line-height: 1.55;
+    }
+    .binding-row form {
+        display: inline;
+        margin-left: 7px;
+    }
+    .binding-manager {
+        margin-top: 12px;
+        border: 1px solid var(--source-line);
+        background: var(--source-soft);
+    }
+    .binding-manager summary {
+        padding: 9px 10px;
+        cursor: pointer;
+        color: #285d8c;
+        font-weight: 600;
+    }
+    .binding-manager form {
+        display: flex;
+        gap: 7px;
+        padding: 0 10px 10px;
+    }
+    .binding-manager select {
+        flex: 1;
+        min-width: 0;
+        height: 34px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+    }
+    .empty-state {
+        padding: 34px 20px;
+        text-align: center;
+        color: var(--source-muted);
+    }
+    .run-list,
+    .routing-list {
+        padding: 0 18px 18px;
+    }
+    .routing-groups {
+        margin: 0 18px 16px;
+        padding: 13px 14px;
+        border: 1px solid #9cd8cf;
+        background: #fbfffe;
+    }
+    .routing-groups h3 {
+        margin: 0 0 4px;
+        font-size: 16px;
+    }
+    .routing-group-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+        margin-top: 11px;
+    }
+    .routing-group {
+        padding: 11px 12px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+    }
+    .routing-group-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 7px;
+    }
+    .routing-group form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 7px;
+        margin-top: 9px;
+    }
+    .routing-group select {
+        min-width: 0;
+        height: 34px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+    }
+    .routing-group label {
+        grid-column: 1 / -1;
+    }
+    .run-row {
+        border: 1px solid var(--source-line);
+        margin-bottom: 10px;
+        display: grid;
+        grid-template-columns: minmax(220px, 1.3fr) minmax(200px, 1fr) repeat(3, minmax(100px, .55fr));
+        background: #fff;
+    }
+    .run-cell {
+        padding: 12px 14px;
+        border-right: 1px solid var(--source-line);
+        min-width: 0;
+    }
+    .run-cell:last-child { border-right: 0; }
+    .run-cell span {
+        color: var(--source-muted);
+        font-size: 11px;
+        display: block;
+        margin-bottom: 4px;
+    }
+    .run-error {
+        color: var(--source-danger);
+        margin-top: 5px;
+        word-break: break-word;
+    }
+    .routing-item {
+        border: 1px solid var(--source-line);
+        margin-bottom: 12px;
+        background: #fff;
+    }
+    .routing-head {
+        padding: 13px 15px;
+        border-bottom: 1px solid var(--source-line);
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+    }
+    .endpoint-title {
+        font-size: 16px;
+        font-weight: 700;
+        word-break: break-all;
+    }
+    .method {
+        display: inline-block;
+        min-width: 44px;
+        text-align: center;
+        color: #915a00;
+        border: 1px solid #efbd66;
+        background: #fff8e8;
+        padding: 2px 6px;
+        margin-right: 7px;
+        font-size: 12px;
+    }
+    .decision {
+        padding: 3px 8px;
+        font-size: 12px;
+        border: 1px solid #efbd66;
+        color: var(--source-warn);
+        background: var(--source-warn-soft);
+        white-space: nowrap;
+    }
+    .decision.assigned {
+        border-color: #8dd2c7;
+        color: #087466;
+        background: var(--source-accent-soft);
+    }
+    .decision.ignored {
+        border-color: #cbd5e1;
+        color: #475569;
+        background: #f8fafc;
+    }
+    .routing-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 1fr) minmax(260px, 1.2fr) minmax(330px, 1.3fr);
+    }
+    .routing-panel {
+        padding: 14px 15px;
+        border-right: 1px solid var(--source-line);
+        min-width: 0;
+    }
+    .routing-panel:last-child { border-right: 0; }
+    .routing-panel h4 {
+        margin: 0 0 9px;
+        font-size: 14px;
+    }
+    .evidence-line {
+        line-height: 1.65;
+        word-break: break-word;
+    }
+    .candidate {
+        display: inline-block;
+        margin: 0 5px 5px 0;
+        padding: 3px 7px;
+        border: 1px solid var(--source-line);
+        background: var(--source-soft);
+    }
+    .routing-form select {
+        width: 100%;
+        height: 36px;
+        border: 1px solid var(--source-line);
+        background: #fff;
+        margin-bottom: 9px;
+        padding: 0 8px;
+    }
+    .routing-form-actions {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+        margin-top: 9px;
+    }
+    .legacy-note {
+        margin: 0 18px 16px;
+        padding: 11px 13px;
+        border: 1px solid #f0c98b;
+        color: #8a4b08;
+        background: #fffaf1;
+        line-height: 1.6;
+    }
+    code {
+        color: #475569;
+        word-break: break-all;
+    }
+    @media (max-width: 1100px) {
+        .source-metrics { grid-template-columns: repeat(2, 1fr); }
+        .source-metric { border-bottom: 1px solid var(--source-line); }
+        .source-list { grid-template-columns: 1fr; }
+        .routing-group-grid { grid-template-columns: 1fr; }
+        .routing-grid { grid-template-columns: 1fr; }
+        .routing-panel { border-right: 0; border-bottom: 1px solid var(--source-line); }
+        .run-row { grid-template-columns: 1fr 1fr; }
+        .run-cell { border-bottom: 1px solid var(--source-line); }
+    }
+    @media (max-width: 700px) {
+        .source-page { padding: 10px; }
+        .source-header { display: block; }
+        .source-actions { margin-top: 12px; }
+        .source-nav { overflow-x: auto; padding: 0; }
+        .source-nav a { white-space: nowrap; }
+        .form-grid,
+        .source-metrics,
+        .run-row { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+{% set source_labels = {
+    'apifox': 'Apifox',
+    'openapi': 'OpenAPI',
+    'postman': 'Postman',
+    'har': 'HAR',
+    'workspace': '实时流量',
+    'mitm': 'mitm 流量',
+    'legacy': '历史待归属'
+} %}
+<div class="source-page" data-testid="data-source-center">
+    <section class="source-card source-header">
+        <div>
+            <div class="source-eyebrow">DATA SOURCE &amp; ROUTING</div>
+            <h1>数据源与路由中心</h1>
+            <div class="source-muted">
+                数据源回答“从哪里来”，路由决定“属于哪个项目”。认证、测试执行和接口知识只引用已经归属的结果。
+            </div>
+        </div>
+        <div class="source-actions">
+            <span class="layui-badge-rim">旧 Workspace 实时运行链已退役；历史数据仅供迁移。</span>
+            <a class="layui-btn layui-btn-primary" href="{{ url_for('web.project_execution_center') }}">查看执行记录</a>
+        </div>
+    </section>
+
+    <section class="source-card source-metrics">
+        <div class="source-metric"><span>数据源</span><strong>{{ stats.source_count }}</strong></div>
+        <div class="source-metric"><span>导入批次</span><strong>{{ stats.import_count }}</strong></div>
+        <div class="source-metric"><span>自动/人工已归属</span><strong>{{ stats.assigned_count }}</strong></div>
+        <div class="source-metric"><span>待确认路由</span><strong>{{ stats.pending_routing_count }}</strong></div>
+        <div class="source-metric"><span>历史未归属资产 / 样本</span><strong>{{ stats.legacy_unscoped_asset_count }} / {{ stats.legacy_unscoped_sample_count }}</strong></div>
+    </section>
+
+    <nav class="source-card source-nav" aria-label="数据源中心导航">
+        <a class="{% if view == 'sources' %}active{% endif %}"
+           href="{{ url_for('web.data_source_center', view='sources', source_type=source_type_filter) }}">1. 数据源</a>
+        <a class="{% if view == 'imports' %}active{% endif %}"
+           href="{{ url_for('web.data_source_center', view='imports', source_type=source_type_filter) }}">2. 导入批次</a>
+        <a class="{% if view == 'routing' %}active{% endif %}"
+           href="{{ url_for('web.data_source_center', view='routing', routing_decision='open') }}">
+            3. 路由待处理{% if stats.pending_routing_count %}（{{ stats.pending_routing_count }}）{% endif %}
+        </a>
+    </nav>
+
+    {% if notice %}
+    <div class="source-notice {{ notice.level }}">{{ notice.text }}</div>
+    {% endif %}
+
+    {% if view == 'sources' %}
+    <section class="source-card">
+        <div class="section-head">
+            <div>
+                <h2>数据源</h2>
+                <div class="source-muted">同一个来源可以产生多个不可变导入批次，并通过显式绑定服务一个或多个项目。</div>
+            </div>
+        </div>
+
+        {% if can_manage %}
+        <details class="import-panel" {% if not source_rows %}open{% endif %}>
+            <summary>＋ 导入一个文件版本</summary>
+            <div class="import-body">
+                <form method="POST" enctype="multipart/form-data"
+                      action="{{ url_for('web.data_source_center') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="action" value="import_source">
+                    <input type="hidden" name="return_view" value="sources">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label>格式</label>
+                            <select name="format" required>
+                                <option value="">请选择</option>
+                                <option value="openapi">OpenAPI 文档</option>
+                                <option value="postman">Postman Collection</option>
+                                <option value="har">HAR 流量</option>
+                            </select>
+                            <div class="field-help">OpenAPI/Postman 必须选择项目；HAR 可以自动路由。</div>
+                        </div>
+                        <div class="form-field">
+                            <label>文件</label>
+                            <input type="file" name="source_file" accept=".har,.json" required>
+                        </div>
+                        <div class="form-field">
+                            <label>来源名称</label>
+                            <input type="text" name="source_name" maxlength="240" placeholder="例如：订单服务 OpenAPI">
+                            <div class="field-help">相同来源名可连续导入新版本，每次都会创建独立批次。</div>
+                        </div>
+                        <div class="form-field">
+                            <label>项目与环境</label>
+                            <select name="project_environment">
+                                <option value="">HAR 自动路由 / 暂不归属</option>
+                                {% for option in environment_options %}
+                                <option value="{{ option.value }}">
+                                    {{ option.project_name }} / {{ option.env_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Base URL（可选）</label>
+                            <input type="text" name="base_url" placeholder="文档没有 Server 时使用">
+                        </div>
+                        <div class="form-field">
+                            <label>稳定来源键（可选）</label>
+                            <input type="text" name="source_key" maxlength="180" placeholder="默认使用来源名称">
+                            <div class="field-help">只有需要把不同文件名归并为同一来源时才填写。</div>
+                        </div>
+                    </div>
+                    <div class="import-submit">
+                        <label>
+                            <input type="checkbox" name="run_parameters" value="1" checked>
+                            导入后执行本地接口知识预处理（不发送请求）
+                        </label>
+                        <button type="submit" class="layui-btn">创建导入批次</button>
+                    </div>
+                </form>
+            </div>
+        </details>
+        {% endif %}
+
+        <form class="source-filter" method="GET" action="{{ url_for('web.data_source_center') }}">
+            <input type="hidden" name="view" value="sources">
+            <select name="source_type">
+                <option value="">全部来源类型</option>
+                {% for source_type in source_types %}
+                <option value="{{ source_type }}" {% if source_type_filter == source_type %}selected{% endif %}>
+                    {{ source_labels.get(source_type, source_type) }}
+                </option>
+                {% endfor %}
+            </select>
+            <button class="layui-btn layui-btn-sm" type="submit">筛选</button>
+        </form>
+
+        {% if stats.legacy_unscoped_asset_count or stats.legacy_unscoped_sample_count %}
+        <div class="legacy-note">
+            发现 {{ stats.legacy_unscoped_asset_count }} 个历史未归属资产和
+            {{ stats.legacy_unscoped_sample_count }} 个历史未归属样本。它们已转换为脱敏观察并进入路由待处理；
+            未确认归属前不会参与参数频率、关系验证或链路执行。
+        </div>
+        {% endif %}
+
+        <div class="source-list">
+            {% for source in source_rows %}
+            <article class="source-item">
+                <div class="source-item-head">
+                    <div>
+                        <h3>{{ source.name }}</h3>
+                        <span class="source-type">{{ source_labels.get(source.source_type, source.source_type) }}</span>
+                    </div>
+                    <span class="source-status">{{ source.lifecycle }}</span>
+                </div>
+                <div class="source-item-body">
+                    <div class="source-kpis">
+                        <div class="source-kpi"><span>项目绑定</span><strong>{{ source.binding_count }}</strong></div>
+                        <div class="source-kpi"><span>导入批次</span><strong>{{ source.run_count }}</strong></div>
+                        <div class="source-kpi"><span>流量观察</span><strong>{{ source.observation_count }}</strong></div>
+                    </div>
+                    <div class="source-muted">
+                        来源标识：<code>{{ source.external_id }}</code><br>
+                        最近导入：{{ source.last_run_at or '尚无批次' }}<br>
+                        最近观察：{{ source.last_observed_at or '尚无观察' }}
+                    </div>
+                    {% for binding in source.bindings %}
+                    <div class="binding-row">
+                        <strong>{{ binding.project_name or binding.project_id }}</strong>
+                        / {{ binding.env_id or '未指定环境' }}<br>
+                        <span class="source-muted">
+                            精确接口规则 {{ binding.signature_count }} 条；
+                            Host {{ binding.hosts|length }} 条；路径前缀 {{ binding.path_prefixes|length }} 条
+                        </span>
+                        {% if can_manage %}
+                        <form method="POST" action="{{ url_for('web.data_source_center') }}"
+                              onsubmit="return confirm('停用这个来源绑定？历史导入与路由证据会保留，但后续不再按此绑定自动归属。');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="deactivate_source_binding">
+                            <input type="hidden" name="binding_id" value="{{ binding.id }}">
+                            <input type="hidden" name="data_source_id" value="{{ source.data_source_id }}">
+                            <input type="hidden" name="return_view" value="sources">
+                            <input type="hidden" name="return_source_type" value="{{ source_type_filter }}">
+                            <button class="layui-btn layui-btn-primary layui-btn-xs" type="submit">停用</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="binding-row source-muted">尚未绑定项目；流量将进入路由队列。</div>
+                    {% endfor %}
+                    {% if can_manage %}
+                    <details class="binding-manager">
+                        <summary>新增项目绑定</summary>
+                        <form method="POST" action="{{ url_for('web.data_source_center') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="bind_source">
+                            <input type="hidden" name="data_source_id" value="{{ source.data_source_id }}">
+                            <input type="hidden" name="return_view" value="sources">
+                            <input type="hidden" name="return_source_type" value="{{ source_type_filter }}">
+                            <select name="project_environment" required>
+                                <option value="">选择项目与环境</option>
+                                {% for option in environment_options %}
+                                <option value="{{ option.value }}">{{ option.project_name }} / {{ option.env_name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="layui-btn layui-btn-sm" type="submit">保存绑定</button>
+                        </form>
+                    </details>
+                    {% endif %}
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-state">当前筛选下没有数据源。可以导入文档/HAR，或从实时采集空间产生观察。</div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if view == 'imports' %}
+    <section class="source-card">
+        <div class="section-head">
+            <div>
+                <h2>导入批次</h2>
+                <div class="source-muted">每次导入都是不可变批次；失败不会覆盖上一次成功版本。</div>
+            </div>
+        </div>
+        <form class="source-filter" method="GET" action="{{ url_for('web.data_source_center') }}">
+            <input type="hidden" name="view" value="imports">
+            <select name="source_type">
+                <option value="">全部来源类型</option>
+                {% for source_type in source_types %}
+                <option value="{{ source_type }}" {% if source_type_filter == source_type %}selected{% endif %}>
+                    {{ source_labels.get(source_type, source_type) }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="import_status">
+                <option value="">全部批次状态</option>
+                {% for status in ['running', 'done', 'failed'] %}
+                <option value="{{ status }}" {% if import_status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+            </select>
+            <button class="layui-btn layui-btn-sm" type="submit">筛选</button>
+        </form>
+        <div class="run-list">
+            {% for run in import_rows %}
+            <article class="run-row">
+                <div class="run-cell">
+                    <span>来源 / 批次</span>
+                    <strong>{{ run.source_name or source_labels.get(run.source_type, run.source_type) }}</strong><br>
+                    <code>{{ run.import_run_id }}</code>
+                    {% if run.error_summary %}<div class="run-error">{{ run.error_summary }}</div>{% endif %}
+                </div>
+                <div class="run-cell">
+                    <span>项目归属</span>
+                    {% for project in run.projects %}
+                    {{ project.project_name or project.project_id }}{% if not loop.last %}<br>{% endif %}
+                    {% else %}待路由{% endfor %}
+                    {% if run.env_id %}<br><span>{{ run.env_id }}</span>{% endif %}
+                </div>
+                <div class="run-cell"><span>状态</span><strong>{{ run.status }}</strong></div>
+                <div class="run-cell"><span>资产 / 观察</span><strong>{{ run.asset_count }} / {{ run.observation_count }}</strong></div>
+                <div class="run-cell"><span>开始 / 完成</span>{{ run.started_at }}<br>{{ run.finished_at or '-' }}</div>
+            </article>
+            {% else %}
+            <div class="empty-state">当前筛选下没有导入批次。</div>
+            {% endfor %}
+        </div>
+        {% if import_page > 0 or ((import_page + 1) * import_size < import_count) %}
+        <div class="source-filter">
+            {% if import_page > 0 %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.data_source_center', view='imports', source_type=source_type_filter, import_status=import_status, import_page=import_page-1) }}">上一页</a>
+            {% endif %}
+            <span>第 {{ import_page + 1 }} 页，共 {{ import_count }} 个批次</span>
+            {% if (import_page + 1) * import_size < import_count %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.data_source_center', view='imports', source_type=source_type_filter, import_status=import_status, import_page=import_page+1) }}">下一页</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if view == 'routing' %}
+    <section class="source-card">
+        <div class="section-head">
+            <div>
+                <h2>路由待处理</h2>
+                <div class="source-muted">机器只在证据足够时自动归属；模糊或无匹配的观察由人确认，也可以明确标记为非业务流量。</div>
+            </div>
+        </div>
+        <form class="source-filter" method="GET" action="{{ url_for('web.data_source_center') }}">
+            <input type="hidden" name="view" value="routing">
+            <select name="routing_decision">
+                <option value="open" {% if routing_filter == 'open' %}selected{% endif %}>待处理（unassigned + ambiguous）</option>
+                {% for status in ['unassigned', 'ambiguous', 'assigned', 'ignored', 'all'] %}
+                <option value="{{ status }}" {% if routing_filter == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+            </select>
+            <button class="layui-btn layui-btn-sm" type="submit">筛选</button>
+        </form>
+        {% if routing_filter == 'open' and routing_groups %}
+        <div class="routing-groups">
+            <h3>先按来源与 Host 批量处理</h3>
+            <div class="source-muted">
+                同一来源、同一 Host 通常属于同一项目。系统先聚类，人工只确认一次；每个接口结构仍会分别留下路由决策和学习规则。
+            </div>
+            <div class="routing-group-grid">
+                {% for group in routing_groups %}
+                <article class="routing-group">
+                    <div class="routing-group-title">
+                        <strong>{{ group.domain or '无 Host / 仅结构证据' }}</strong>
+                        <span class="decision">{{ group.count }} 条待处理</span>
+                    </div>
+                    <div class="source-muted">
+                        {{ group.source_name or group.data_source_id or '未知来源' }}<br>
+                        方法：{{ group.methods|join(', ') or '-' }}
+                    </div>
+                    {% if can_manage and group.batch_safe %}
+                    <form method="POST" action="{{ url_for('web.data_source_center') }}"
+                          onsubmit="return confirm('确认把该来源与 Host 下的 {{ group.count }} 条待处理观察归属到所选项目？不会发送业务请求。');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="assign_routing_group">
+                        <input type="hidden" name="data_source_id" value="{{ group.data_source_id }}">
+                        <input type="hidden" name="domain" value="{{ group.domain }}">
+                        <input type="hidden" name="expected_count" value="{{ group.count }}">
+                        <input type="hidden" name="return_view" value="routing">
+                        <input type="hidden" name="return_routing_decision" value="open">
+                        <select name="project_environment" required>
+                            <option value="">选择项目与环境</option>
+                            {% for option in environment_options %}
+                            <option value="{{ option.value }}">{{ option.project_name }} / {{ option.env_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="layui-btn layui-btn-sm" type="submit">批量确认</button>
+                        <label>
+                            <input type="checkbox" name="teach_future" value="1" checked>
+                            学习组内每种接口结构，后续同来源流量自动归属
+                        </label>
+                    </form>
+                    {% elif not group.batch_safe %}
+                    <div class="source-muted" style="margin-top:8px;">
+                        缺少 Host，不能安全批量归属；请逐条查看接口结构。
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        <div class="routing-list">
+            {% for row in routing %}
+            <article class="routing-item">
+                <div class="routing-head">
+                    <div>
+                        <div class="endpoint-title">
+                            <span class="method">{{ row.method }}</span>{{ row.domain }}{{ row.path }}
+                        </div>
+                        <div class="source-muted">
+                            {{ row.source_name or source_labels.get(row.source_type, row.source_type) }}
+                            · {{ row.captured_at }}
+                        </div>
+                    </div>
+                    <span class="decision {{ row.decision }}">{{ row.decision }} · {{ '%.0f'|format(row.confidence * 100) }}%</span>
+                </div>
+                <div class="routing-grid">
+                    <section class="routing-panel">
+                        <h4>来源与观察证据</h4>
+                        <div class="evidence-line">
+                            Header 名称：{{ row.request_header_names|join(', ') or '无' }}<br>
+                            Query 名称：{{ row.request_query_names|join(', ') or '无' }}<br>
+                            Body 结构：<code>{{ row.body_shape|tojson }}</code><br>
+                            响应：HTTP {{ row.response_status or '-' }} / {{ row.response_length }} bytes<br>
+                            批次：<code>{{ row.import_run_id or '实时观察' }}</code>
+                        </div>
+                    </section>
+                    <section class="routing-panel">
+                        <h4>机器判断</h4>
+                        <div class="evidence-line">{{ row.reason_codes|join('、') or '没有高置信度匹配' }}</div>
+                        <div style="margin-top:9px;">
+                            {% for candidate in row.candidates %}
+                            <span class="candidate">
+                                {{ candidate.project_name or candidate.project_id }}
+                                {{ '%.0f'|format(candidate.score * 100) }}%
+                            </span>
+                            {% else %}
+                            <span class="source-muted">暂无候选项目</span>
+                            {% endfor %}
+                        </div>
+                        {% if row.decision == 'assigned' %}
+                        <div style="margin-top:10px;">
+                            已归属：<strong>{{ row.selected_project_name or row.selected_project_id }}</strong>
+                            / {{ row.selected_env_id or '未指定环境' }}
+                        </div>
+                        {% endif %}
+                    </section>
+                    <section class="routing-panel">
+                        <h4>人工处置</h4>
+                        {% if can_manage %}
+                        <form method="POST" class="routing-form"
+                              action="{{ url_for('web.data_source_center') }}"
+                              {% if row.decision in ['assigned', 'ignored'] %}
+                              onsubmit="return confirm('这是对已有最终结论的纠偏。系统会保留旧结论并追加新结论，确认继续？');"
+                              {% endif %}>
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="assign_observation">
+                            <input type="hidden" name="observation_id" value="{{ row.observation_id }}">
+                            <input type="hidden" name="expected_decision_id" value="{{ row.id }}">
+                            <input type="hidden" name="return_view" value="routing">
+                            <input type="hidden" name="return_routing_decision" value="{{ routing_filter }}">
+                            <input type="hidden" name="return_route_page" value="{{ route_page }}">
+                            {% if row.decision in ['assigned', 'ignored'] %}
+                            <input type="hidden" name="override_final" value="1">
+                            {% endif %}
+                            <select name="project_environment" required>
+                                <option value="">选择项目与环境</option>
+                                {% for option in environment_options %}
+                                <option value="{{ option.value }}">{{ option.project_name }} / {{ option.env_name }}</option>
+                                {% endfor %}
+                            </select>
+                            <label>
+                                <input type="checkbox" name="teach_future" value="1" checked>
+                                后续同来源、同接口结构自动归属
+                            </label>
+                            <div class="routing-form-actions">
+                                <button class="layui-btn layui-btn-sm" type="submit">
+                                    {% if row.decision in ['assigned', 'ignored'] %}修改归属{% else %}确认归属{% endif %}
+                                </button>
+                            </div>
+                        </form>
+                        {% if row.decision != 'ignored' %}
+                        <form method="POST" class="routing-form"
+                              action="{{ url_for('web.data_source_center') }}"
+                              onsubmit="return confirm('确认把这条观察标记为非业务流量？历史证据仍会保留，已学习的该接口规则会撤销。');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="ignore_observation">
+                            <input type="hidden" name="observation_id" value="{{ row.observation_id }}">
+                            <input type="hidden" name="expected_decision_id" value="{{ row.id }}">
+                            <input type="hidden" name="ignore_reason" value="manual_non_business_traffic">
+                            <input type="hidden" name="return_view" value="routing">
+                            <input type="hidden" name="return_routing_decision" value="{{ routing_filter }}">
+                            <input type="hidden" name="return_route_page" value="{{ route_page }}">
+                            {% if row.decision == 'assigned' %}
+                            <input type="hidden" name="override_final" value="1">
+                            {% endif %}
+                            <div class="routing-form-actions">
+                                <button class="layui-btn layui-btn-primary layui-btn-sm" type="submit">忽略非业务流量</button>
+                            </div>
+                        </form>
+                        {% else %}
+                        <div class="source-muted" style="margin-top:9px;">
+                            已忽略；如需恢复，请在上方重新选择项目与环境。
+                        </div>
+                        {% endif %}
+                        {% else %}
+                        <div class="source-muted">只读账号不能修改路由结论。</div>
+                        {% endif %}
+                    </section>
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-state">当前筛选下没有路由项。没有待处理项表示新观察均已归属或被明确忽略。</div>
+            {% endfor %}
+        </div>
+        {% if route_page > 0 or ((route_page + 1) * route_size < routing_count) %}
+        <div class="source-filter">
+            {% if route_page > 0 %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.data_source_center', view='routing', routing_decision=routing_filter, route_page=route_page-1) }}">上一页</a>
+            {% endif %}
+            <span>第 {{ route_page + 1 }} 页，共 {{ routing_count }} 条路由决策</span>
+            {% if (route_page + 1) * route_size < routing_count %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.data_source_center', view='routing', routing_decision=routing_filter, route_page=route_page+1) }}">下一页</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

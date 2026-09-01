@@ -1,5 +1,9 @@
 # 安全测试结果管理
 
+> 状态：历史结果模型草案。当前实现已将机器结果、追加式人工复核、稳定 finding 和
+> 原证据修复复测分离；现行定义见 `api_manager_v2_domain_architecture.md` 与
+> `../PROJECT_OVERVIEW.md`。
+
 `api_manger` 作为安全测试基座，需要记录三类事实：
 
 - 资产事实：有哪些接口、参数、环境、账号角色。

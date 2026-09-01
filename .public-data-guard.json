@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "max_text_file_bytes": 2097152,
+  "forbidden_path_components": [
+    ".secrets",
+    ".playwright-cli",
+    "captures",
+    "evidence",
+    "local_data",
+    "local_engagements",
+    "output",
+    "private_engagements",
+    "schemathesis-report",
+    "screenshots",
+    "security_profiles",
+    "security_reports",
+    "uploads"
+  ],
+  "forbidden_path_globs": [
+    "*.HAR",
+    "*.bson",
+    "*.db",
+    "*.doc",
+    "*.docx",
+    "*.dump",
+    "*.env",
+    "*.har",
+    "*.jks",
+    "*.key",
+    "*.local.*",
+    "*.log",
+    "*.openapi.json",
+    "*.p12",
+    "*.pcap",
+    "*.pdf",
+    "*.pem",
+    "*.pfx",
+    "*.postman.json",
+    "*.private.*",
+    "*.saz",
+    "*.secret.*",
+    "*.sqlite",
+    "*.sqlite3",
+    "*.xlsx",
+    "*.zip",
+    "postman_collection*.json",
+    "runtime_*.json",
+    "runtime_*.log",
+    "runtime_*.tmp"
+  ],
+  "allowed_binary_globs": [
+    "apiAnalysis/static/**"
+  ],
+  "allowed_hosts": [
+    "127.0.0.1",
+    "0.0.0.0",
+    "cdn.staticfile.org",
+    "code.jquery.com",
+    "fontello.com",
+    "github.com",
+    "localhost",
+    "mths.be",
+    "ns.adobe.com",
+    "placeholder.local",
+    "stackpath.bootstrapcdn.com",
+    "www.layui.com",
+    "www.w3.org"
+  ],
+  "content_rule_exemptions": {
+    "tools/public_repo_guard.py": ["*"],
+    "tests/test_public_repo_guard.py": ["*"]
+  }
+}

@@ -1,0 +1,594 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<style>
+    :root {
+        --execution-ink: #14213d;
+        --execution-muted: #64748b;
+        --execution-line: #d8e0ea;
+        --execution-soft: #f5f8fb;
+        --execution-accent: #008b7a;
+        --execution-accent-soft: #e9f8f5;
+        --execution-warn: #b45309;
+        --execution-danger: #b42318;
+    }
+    .execution-page {
+        min-height: 100vh;
+        padding: 18px 22px 44px;
+        color: var(--execution-ink);
+        background: #f4f7fa;
+    }
+    .execution-card {
+        margin-bottom: 14px;
+        border: 1px solid var(--execution-line);
+        background: #fff;
+    }
+    .execution-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 20px 22px;
+        border-top: 4px solid var(--execution-accent);
+    }
+    .execution-eyebrow {
+        color: var(--execution-accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .12em;
+    }
+    .execution-header h1 {
+        margin: 4px 0 6px;
+        font-size: 26px;
+        line-height: 1.25;
+    }
+    .execution-muted {
+        color: var(--execution-muted);
+        line-height: 1.6;
+    }
+    .execution-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .execution-metrics {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .execution-metric {
+        padding: 15px 18px;
+        border-right: 1px solid var(--execution-line);
+    }
+    .execution-metric:last-child { border-right: 0; }
+    .execution-metric span {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--execution-muted);
+        font-size: 12px;
+    }
+    .execution-metric strong {
+        font-size: 23px;
+        line-height: 1;
+    }
+    .execution-notice {
+        padding: 11px 14px;
+        margin-bottom: 14px;
+        border: 1px solid var(--execution-line);
+        background: #fff;
+    }
+    .execution-notice.success {
+        color: #08695d;
+        border-color: #94d8cd;
+        background: var(--execution-accent-soft);
+    }
+    .execution-notice.warning {
+        color: var(--execution-warn);
+        border-color: #f1c58b;
+        background: #fff7ed;
+    }
+    .execution-notice.error {
+        color: var(--execution-danger);
+        border-color: #f0aaa5;
+        background: #fff1f0;
+    }
+    .execution-filter {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 13px 18px;
+    }
+    .execution-filter select {
+        min-width: 230px;
+        height: 36px;
+        padding: 0 10px;
+        border: 1px solid var(--execution-line);
+        background: #fff;
+    }
+    .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 17px 19px 12px;
+        border-bottom: 1px solid var(--execution-line);
+    }
+    .section-head h2 {
+        margin: 0 0 4px;
+        font-size: 20px;
+    }
+    .project-strip {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        padding: 14px 18px 18px;
+    }
+    .project-tile {
+        display: block;
+        padding: 13px 14px;
+        color: var(--execution-ink);
+        border: 1px solid var(--execution-line);
+        background: var(--execution-soft);
+    }
+    .project-tile.active {
+        border-color: #6fc8bb;
+        background: var(--execution-accent-soft);
+    }
+    .project-tile strong {
+        display: block;
+        margin-bottom: 7px;
+        font-size: 15px;
+    }
+    .project-facts {
+        display: flex;
+        gap: 12px;
+        color: var(--execution-muted);
+        font-size: 12px;
+    }
+    .run-list { padding: 0 18px 18px; }
+    .run-row {
+        display: grid;
+        grid-template-columns: minmax(250px, 1.3fr) minmax(220px, 1fr) minmax(210px, .9fr) minmax(150px, .65fr);
+        margin-top: 11px;
+        border: 1px solid var(--execution-line);
+        background: #fff;
+    }
+    .run-cell {
+        min-width: 0;
+        padding: 13px 14px;
+        border-right: 1px solid var(--execution-line);
+    }
+    .run-cell:last-child { border-right: 0; }
+    .run-cell > span:first-child {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--execution-muted);
+        font-size: 11px;
+    }
+    .run-title {
+        margin-bottom: 4px;
+        font-size: 15px;
+        font-weight: 700;
+    }
+    .run-code {
+        color: #475569;
+        word-break: break-all;
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border: 1px solid #b8c5d4;
+        color: #475569;
+        background: #f8fafc;
+        font-size: 12px;
+    }
+    .status-badge.running,
+    .status-badge.done {
+        color: #087466;
+        border-color: #8dd2c7;
+        background: var(--execution-accent-soft);
+    }
+    .status-badge.paused,
+    .status-badge.failed {
+        color: var(--execution-danger);
+        border-color: #f0aaa5;
+        background: #fff1f0;
+    }
+    .progress-track {
+        height: 7px;
+        overflow: hidden;
+        margin: 8px 0 6px;
+        background: #e8edf3;
+    }
+    .progress-fill {
+        height: 100%;
+        background: var(--execution-accent);
+    }
+    .run-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 9px;
+    }
+    .run-actions form { display: inline; }
+    .empty-state {
+        padding: 34px 20px;
+        text-align: center;
+        color: var(--execution-muted);
+    }
+    .execution-pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 9px;
+        padding: 0 18px 18px;
+    }
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--execution-line);
+    }
+    .detail-fact {
+        padding: 13px 15px;
+        border-right: 1px solid var(--execution-line);
+    }
+    .detail-fact:last-child { border-right: 0; }
+    .detail-fact span {
+        display: block;
+        color: var(--execution-muted);
+        font-size: 11px;
+        margin-bottom: 4px;
+    }
+    .detail-section { padding: 14px 18px 18px; }
+    .detail-section h3 {
+        margin: 4px 0 10px;
+        font-size: 15px;
+    }
+    .execution-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .execution-table th,
+    .execution-table td {
+        padding: 9px 10px;
+        text-align: left;
+        vertical-align: top;
+        border: 1px solid var(--execution-line);
+        word-break: break-word;
+    }
+    .execution-table th {
+        color: #475569;
+        background: var(--execution-soft);
+        font-size: 12px;
+    }
+    @media (max-width: 1100px) {
+        .execution-metrics { grid-template-columns: repeat(3, 1fr); }
+        .execution-metric { border-bottom: 1px solid var(--execution-line); }
+        .run-row { grid-template-columns: 1fr 1fr; }
+        .run-cell { border-bottom: 1px solid var(--execution-line); }
+    }
+    @media (max-width: 700px) {
+        .execution-page { padding: 10px; }
+        .execution-header { display: block; }
+        .execution-actions { margin-top: 12px; }
+        .execution-metrics,
+        .run-row,
+        .detail-grid { grid-template-columns: 1fr; }
+        .execution-filter select { width: 100%; min-width: 0; }
+        .detail-fact,
+        .run-cell { border-right: 0; }
+        .detail-section { overflow-x: auto; }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="execution-page" data-testid="project-execution-center">
+    <section class="execution-card execution-header">
+        <div>
+            <div class="execution-eyebrow">PROJECT EXECUTION</div>
+            <h1>项目执行中心</h1>
+            <div class="execution-muted">
+                这里只管理已经归属项目的执行计划、进度、暂停原因和结果。数据导入与项目路由在数据源中心处理。
+            </div>
+        </div>
+        <div class="execution-actions">
+            <a class="layui-btn layui-btn-primary"
+               href="{{ url_for('web.data_source_center', view='routing') }}">数据源与路由</a>
+            <a class="layui-btn layui-btn-primary"
+               href="{{ url_for('web.parameter_relations') }}">接口知识中心</a>
+        </div>
+    </section>
+
+    {% if notice %}
+    <div class="execution-notice {{ notice.level }}"
+         data-testid="lifecycle-notice">{{ notice.text }}</div>
+    {% endif %}
+
+    <section class="execution-card execution-metrics" data-testid="lifecycle-metrics">
+        <div class="execution-metric"><span>项目</span><strong>{{ project_cards|length }}</strong></div>
+        <div class="execution-metric"><span>排队</span><strong>{{ execution_status_counts.queued or 0 }}</strong></div>
+        <div class="execution-metric"><span>执行中</span><strong>{{ execution_status_counts.running or 0 }}</strong></div>
+        <div class="execution-metric"><span>已暂停</span><strong>{{ execution_status_counts.paused or 0 }}</strong></div>
+        <div class="execution-metric"><span>已完成</span><strong>{{ execution_status_counts.done or 0 }}</strong></div>
+        <div class="execution-metric"><span>需复核结果</span><strong>{{ selected_run.review_candidate_count if selected_run else 0 }}</strong></div>
+    </section>
+
+    <section class="execution-card">
+        <form class="execution-filter" method="GET"
+              action="{{ url_for('web.project_execution_center') }}"
+              data-testid="lifecycle-filter">
+            <select name="project_id" aria-label="项目筛选">
+                <option value="">全部项目</option>
+                {% for project in projects %}
+                <option value="{{ project.project_id }}"
+                        {% if project_filter == project.project_id %}selected{% endif %}>
+                    {{ project.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="run_status" aria-label="运行状态">
+                <option value="">全部运行状态</option>
+                {% for value in run_statuses %}
+                <option value="{{ value }}" {% if run_status == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+            <button class="layui-btn layui-btn-sm" type="submit"
+                    data-testid="apply-lifecycle-filter">筛选</button>
+        </form>
+    </section>
+
+    <section class="execution-card" data-testid="project-boundaries">
+        <div class="section-head">
+            <div>
+                <h2>项目概览</h2>
+                <div class="execution-muted">选择项目后，只查看该项目的持久化调度运行。</div>
+            </div>
+        </div>
+        <div class="project-strip">
+            {% for project in project_cards %}
+            <a class="project-tile {% if project_filter == project.project_id %}active{% endif %}"
+               href="{{ url_for('web.project_execution_center', project_id=project.project_id, run_status=run_status) }}">
+                <strong>{{ project.name }}</strong>
+                <div class="project-facts">
+                    <span>{{ project.environment_count }} 个环境</span>
+                    <span>{{ project.asset_count }} 个资产</span>
+                    <span>{{ project.run_count }} 次运行</span>
+                </div>
+            </a>
+            {% else %}
+            <div class="empty-state">尚未创建项目。</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="execution-card" data-testid="execution-runs">
+        <div class="section-head">
+            <div>
+                <h2>执行记录</h2>
+                <div class="execution-muted">共 {{ run_count }} 次运行；每次运行保留独立状态、检查点和结论。</div>
+            </div>
+        </div>
+        <div class="run-list">
+            {% for run in runs %}
+            {% set finished = run.completed_cases + run.failed_cases + run.skipped_cases + run.cancelled_cases %}
+            {% set progress = (finished * 100 / run.total_cases) if run.total_cases else 0 %}
+            <article class="run-row">
+                <div class="run-cell">
+                    <span>运行</span>
+                    <div class="run-title">{{ run.name }}</div>
+                    <code class="run-code">{{ run.id }}</code><br>
+                    <span class="execution-muted">{{ run.check_type }}</span>
+                </div>
+                <div class="run-cell">
+                    <span>执行上下文</span>
+                    <strong>{{ run.project_name or run.project_id or '未归属项目' }}</strong>
+                    / {{ run.env_id or '未指定环境' }}<br>
+                    {{ run.auth_mode }}{% if run.account_id %} · {{ run.account_id }}{% endif %}<br>
+                    <span class="execution-muted">{{ run.adapter_id }}:{{ run.adapter_version }}</span>
+                </div>
+                <div class="run-cell">
+                    <span>进度</span>
+                    <strong>{{ finished }} / {{ run.total_cases }}</strong>
+                    <div class="progress-track" aria-label="完成度 {{ '%.0f'|format(progress) }}%">
+                        <div class="progress-fill" style="width:{{ '%.2f'|format(progress) }}%;"></div>
+                    </div>
+                    <span class="execution-muted">
+                        {{ run.pending_cases }} 待执行 · {{ run.failed_cases }} 异常 · {{ run.skipped_cases }} 跳过
+                    </span>
+                </div>
+                <div class="run-cell">
+                    <span>状态与操作</span>
+                    <span class="status-badge {{ run.status }}">{{ run.status }}</span>
+                    {% if run.last_error_type or run.pause_reason %}
+                    <div class="execution-muted" style="margin-top:6px;">{{ run.last_error_type or run.pause_reason }}</div>
+                    {% endif %}
+                    <div class="run-actions">
+                        <a class="layui-btn layui-btn-primary layui-btn-sm"
+                           data-testid="run-detail-{{ run.id }}"
+                           href="{{ url_for('web.project_execution_center', project_id=project_filter, run_status=run_status, run_id=run.id, page=page) }}">详情</a>
+                        {% if can_manage and run.status == 'paused' %}
+                        <form method="POST" action="{{ url_for('web.project_execution_center') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="resume_run">
+                            <input type="hidden" name="run_id" value="{{ run.id }}">
+                            <input type="hidden" name="expected_status" value="{{ run.status }}">
+                            <input type="hidden" name="return_run_id" value="{{ run.id }}">
+                            <input type="hidden" name="return_project_id" value="{{ project_filter }}">
+                            <input type="hidden" name="return_run_status" value="{{ run_status }}">
+                            <button class="layui-btn layui-btn-normal layui-btn-sm" type="submit">恢复</button>
+                        </form>
+                        {% endif %}
+                        {% if can_manage and run.status in ['preparing','queued','running','cancel_requested','paused'] %}
+                        <form method="POST" action="{{ url_for('web.project_execution_center') }}"
+                              onsubmit="return confirm('确认请求安全取消？已发出的请求不会被撤回，运行和结果也不会删除。');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="action" value="cancel_run">
+                            <input type="hidden" name="run_id" value="{{ run.id }}">
+                            <input type="hidden" name="expected_status" value="{{ run.status }}">
+                            <input type="hidden" name="return_run_id" value="{{ run.id }}">
+                            <input type="hidden" name="return_project_id" value="{{ project_filter }}">
+                            <input type="hidden" name="return_run_status" value="{{ run_status }}">
+                            <button class="layui-btn layui-btn-danger layui-btn-sm" type="submit">取消</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-state">当前筛选下没有持久化执行记录。</div>
+            {% endfor %}
+        </div>
+        {% if page > 0 or ((page + 1) * size < run_count) %}
+        <div class="execution-pagination" data-testid="lifecycle-pagination">
+            {% if page > 0 %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.project_execution_center', project_id=project_filter, run_status=run_status, page=page-1) }}">上一页</a>
+            {% endif %}
+            <span>第 {{ page + 1 }} 页</span>
+            {% if (page + 1) * size < run_count %}
+            <a class="layui-btn layui-btn-primary layui-btn-sm"
+               href="{{ url_for('web.project_execution_center', project_id=project_filter, run_status=run_status, page=page+1) }}">下一页</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+
+    {% if selected_run %}
+    <section class="execution-card" data-testid="selected-run-detail">
+        <div class="section-head">
+            <div>
+                <h2>{{ selected_run.name }}</h2>
+                <div class="execution-muted"><code class="run-code">{{ selected_run.id }}</code></div>
+            </div>
+            <span class="status-badge {{ selected_run.status }}">{{ selected_run.status }}</span>
+        </div>
+        <div class="detail-grid">
+            <div class="detail-fact">
+                <span>认证引用</span>
+                {{ selected_run.auth_provider_id or '-' }} / {{ selected_run.auth_context_ref or '-' }}<br>
+                <span class="execution-muted">{{ selected_run.auth_context.status or '-' }} {{ selected_run.auth_context.error_type }}</span>
+            </div>
+            <div class="detail-fact">
+                <span>注入字段</span>
+                Header：{{ selected_run.auth_context.header_names|join(', ') or '-' }}<br>
+                Cookie：{{ selected_run.auth_context.cookie_names|join(', ') or '-' }}
+            </div>
+            <div class="detail-fact">
+                <span>时间</span>
+                开始：{{ selected_run.started_at or '-' }}<br>
+                完成：{{ selected_run.finished_at or '-' }}
+            </div>
+        </div>
+
+        <div class="detail-section">
+            {% if selected_run.hosts %}
+            <h3>Host 运行状态</h3>
+            <table class="execution-table">
+                <thead><tr><th>Host</th><th>传输错误</th><th>429</th><th>5xx</th><th>停止原因</th></tr></thead>
+                <tbody>
+                {% for host in selected_run.hosts %}
+                <tr>
+                    <td>{{ host.host }}</td>
+                    <td>{{ host.transport_errors }}</td>
+                    <td>{{ host.rate_limits }}</td>
+                    <td>{{ host.server_errors }}</td>
+                    <td>{{ host.stopped_reason or '-' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            <h3>检查点（{{ checkpoints|length }} / {{ checkpoint_count }}）</h3>
+            <table class="execution-table" data-testid="checkpoint-table">
+                <thead><tr><th>#</th><th>Host / PathId</th><th>状态</th><th>发送摘要</th><th>响应摘要</th><th>原因</th></tr></thead>
+                <tbody>
+                {% for item in checkpoints %}
+                <tr>
+                    <td>{{ item.ordinal }}</td>
+                    <td>{{ item.host }} / {{ item.pathid }}</td>
+                    <td>
+                        <div>{{ item.status }}（{{ item.attempt_count }} 次）</div>
+                        <div style="font-weight:600;{% if item.execution_effect_tone == 'success' %}color:#067647;{% elif item.execution_effect_tone == 'warning' %}color:#b54708;{% elif item.execution_effect_tone == 'error' %}color:#b42318;{% else %}color:#667085;{% endif %}">
+                            {{ item.execution_effect }}
+                        </div>
+                    </td>
+                    <td>
+                        <div><strong>{{ item.request_method or '-' }}</strong> {{ item.request_origin }}{{ item.request_path }}</div>
+                        <div class="muted">
+                            Query: {{ item.request_query_names|join(', ') or '-' }}；
+                            Header: {{ item.request_header_names|join(', ') or '-' }}；
+                            Cookie: {{ item.request_cookie_names|join(', ') or '-' }}
+                        </div>
+                        <div class="muted">
+                            Body {{ item.request_body_bytes }} B；
+                            {{ item.request_content_type or '无 Content-Type' }}；
+                            TLS {% if item.request_tls_verify %}校验开启{% else %}<span style="color:#b42318;font-weight:600;">校验关闭</span>{% endif %}；
+                            Redirect {{ '开启' if item.request_allow_redirects else '关闭' }}；
+                            Timeout {{ item.request_timeout_seconds or '-' }}s
+                        </div>
+                        {% if item.auth_request_count %}
+                        <div class="muted">认证前置请求：{{ item.auth_request_count }} 次</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>{{ item.status_code or '-' }} / {{ item.response_len or 0 }} B / {{ item.response_content_type or '-' }} / {{ item.response_json_type or '-' }}</div>
+                        {% if item.response_record_count is not none %}
+                        <div class="muted">集合 {{ item.response_collection_path or '$' }}：{{ item.response_record_count }} 条</div>
+                        {% endif %}
+                        {% if item.response_field_names %}
+                        <details class="muted">
+                            <summary>响应字段（{{ item.response_field_names|length }}）</summary>
+                            <div>{{ item.response_field_names|join(', ') }}</div>
+                        </details>
+                        {% elif item.response_top_level_keys %}
+                        <div class="muted">顶层字段：{{ item.response_top_level_keys|join(', ') }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.error_type }} {{ item.reason_codes|join(', ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">没有检查点。</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:16px;">结果（{{ results|length }} / {{ result_count }}）</h3>
+            <table class="execution-table" data-testid="result-table">
+                <thead><tr><th>PathId</th><th>用例</th><th>结论</th><th>置信度</th><th>原因</th></tr></thead>
+                <tbody>
+                {% for item in results %}
+                <tr>
+                    <td>{{ item.pathid }}</td>
+                    <td>{{ item.method }} {{ item.case_name }}</td>
+                    <td>
+                        {{ item.verdict }}
+                        {% if item.outcome_class %}<br><small>{{ item.outcome_class }}</small>{% endif %}
+                    </td>
+                    <td>{{ '%.0f'|format(item.confidence * 100) }}%</td>
+                    <td>{{ item.reason_codes|join(', ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5">没有结果。</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            {% if case_page > 0 or ((case_page + 1) * case_size < checkpoint_count) or ((case_page + 1) * case_size < result_count) %}
+            <div class="execution-pagination" style="padding-top:14px;">
+                {% if case_page > 0 %}
+                <a class="layui-btn layui-btn-primary layui-btn-sm"
+                   href="{{ url_for('web.project_execution_center', project_id=project_filter, run_status=run_status, run_id=selected_run.id, page=page, case_page=case_page-1) }}">上一页</a>
+                {% endif %}
+                <span>明细第 {{ case_page + 1 }} 页</span>
+                {% if ((case_page + 1) * case_size < checkpoint_count) or ((case_page + 1) * case_size < result_count) %}
+                <a class="layui-btn layui-btn-primary layui-btn-sm"
+                   href="{{ url_for('web.project_execution_center', project_id=project_filter, run_status=run_status, run_id=selected_run.id, page=page, case_page=case_page+1) }}">下一页</a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

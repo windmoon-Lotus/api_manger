@@ -1,0 +1,422 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="x-body">
+    <style>
+        .wizard { max-width: 900px; margin: 0 auto; }
+        .wizard h1 { font-size: 22px; margin-bottom: 6px; }
+        .wizard .subtitle { color: #667085; margin-bottom: 20px; }
+        .path-card { border: 2px solid #e4e7ec; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: border-color .2s; }
+        .path-card:hover { border-color: #009688; }
+        .path-card.active { border-color: #009688; background: #f0fdfa; }
+        .path-card h3 { margin: 0 0 6px; font-size: 16px; }
+        .path-card p { margin: 0; color: #475467; font-size: 13px; }
+        .form-section { display: none; margin-top: 16px; padding: 16px; border: 1px solid #d0d5dd; background: #fcfcfd; }
+        .form-section.visible { display: block; }
+        .prompt-box { background: #1e293b; color: #e2e8f0; padding: 12px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; margin: 8px 0; }
+        .code-editor { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; min-height: 200px; tab-size: 4; }
+    </style>
+
+    <div class="wizard">
+        {% if notice %}
+        <div class="layui-alert {% if notice.level == 'error' %}layui-alert-danger{% else %}layui-alert-success{% endif %}" style="padding:10px;margin-bottom:12px;border:1px solid {% if notice.level == 'error' %}#f7a8a8{% else %}#98d7bd{% endif %};background:{% if notice.level == 'error' %}#fff1f3{% else %}#ecfdf3{% endif %};">
+            {{ notice.text }}
+        </div>
+        {% endif %}
+
+        <h1>配置认证方案</h1>
+        <div class="subtitle">选择配置方式。系统支持任意登录协议——不限于特定产品。</div>
+
+        {# ── 项目/环境选择 ── #}
+        <form method="GET" class="layui-form" style="margin-bottom:16px;">
+            <div class="layui-input-inline" style="width:280px;">
+                <select name="project_id">
+                    <option value="">选择项目</option>
+                    {% for p in projects %}
+                    <option value="{{ p.project_id }}" {% if project_id == p.project_id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if environments %}
+            <div class="layui-input-inline" style="width:180px;">
+                <select name="env_id">
+                    {% for e in environments %}
+                    <option value="{{ e.env_id }}" {% if env_id == e.env_id %}selected{% endif %}>{{ e.name or e.env_id }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <button class="layui-btn layui-btn-primary" type="submit">切换</button>
+        </form>
+
+        {# ── 四路径选择 ── #}
+        <div class="path-card" onclick="showPath(event, 'token')">
+            <h3>🔗 Level 0：Token URL（最简集成）</h3>
+            <p>你已经有获取 token 的手段（脚本/服务/手动/OTP 工具），只需给一个 URL。系统需要 token 时自动调用。<strong>覆盖 OTP、MFA、浏览器登录等所有"人已有方案"的场景。</strong></p>
+        </div>
+        <div class="path-card" onclick="showPath(event, 'recipe')">
+            <h3>📋 Level 1：AI 生成 Recipe → 一键导入</h3>
+            <p>把登录页 URL / curl 命令 / API 文档喂给 AI，AI 生成 recipe JSON，粘贴导入。适合标准 HTTP 登录流程。</p>
+        </div>
+        <div class="path-card" onclick="showPath(event, 'code')">
+            <h3>🐍 Level 2：管理员可信代码获取 Token</h3>
+            <p>管理员安装一个 <code>get_auth(username, password)</code> 本地插件。适合有 SDK 依赖或非标准协议。</p>
+        </div>
+        <div class="path-card" onclick="showPath(event, 'simple')">
+            <h3>🔑 Level 3：简单密码登录</h3>
+            <p>标准 username/password 表单登录。只需填登录 URL + 字段名。</p>
+        </div>
+
+        {# ── Level 0：Token URL ── #}
+        <div id="path-token" class="form-section">
+            <h3>Token URL 配置</h3>
+            <p style="color:#475467;margin-bottom:12px;">
+                系统需要认证时，会调用你提供的 URL 获取 token。你的脚本/服务负责登录逻辑（包括 OTP、MFA 等），系统只负责拿结果。
+            </p>
+            <div style="background:#f0fdfa;border:1px solid #86c7bd;padding:10px;margin-bottom:12px;font-size:13px;">
+                <strong>典型用法：</strong><br>
+                • 本地跑一个脚本 <code>python token_server.py</code> 监听 <code>localhost:9999</code>，手动登录后返回 token<br>
+                • 浏览器插件把最新 token 写到 <code>localhost:9999/token</code><br>
+                • OTP 工具暴露 <code>GET /otp-token</code> 接口<br>
+                • 甚至 <code>file://</code> 不行，但你可以用 <code>python -m http.server</code>  serve 一个 JSON 文件
+            </div>
+            {% if can_manage and project_id %}
+            <form method="POST" action="{{ url_for('web.auth_import_wizard') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="import_token_url">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <input type="hidden" name="env_id" value="{{ env_id }}">
+                <div class="layui-form-item">
+                    <label class="layui-form-label">方案名称</label>
+                    <div class="layui-input-inline" style="width:300px;">
+                        <input class="layui-input" name="profile_name" placeholder="例如：手动 Token / OTP 工具" required>
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="account_key" value="owner" placeholder="账号别名">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">功能点</label>
+                    <div class="layui-input-inline" style="width:220px;">
+                        <input class="layui-input" name="login_scene" placeholder="例如：admin-console">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="role_key" value="default" placeholder="角色：admin/member">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="login_mode" value="token_url" placeholder="登录模式">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">Token URL</label>
+                    <div class="layui-input-block">
+                        <input class="layui-input" name="token_url" required placeholder="http://localhost:9999/token">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">HTTP 方法</label>
+                    <div class="layui-input-inline" style="width:120px;">
+                        <select name="token_method">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                        </select>
+                    </div>
+                    <label class="layui-form-label">传凭据方式</label>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <select name="pass_credentials">
+                            <option value="none">不传（token 已就绪）</option>
+                            <option value="query">Query 参数</option>
+                            <option value="body">JSON Body</option>
+                            <option value="headers">自定义 Headers</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">响应解析</label>
+                    <div class="layui-input-inline" style="width:200px;">
+                        <input class="layui-input" name="response_path" value="access_token" placeholder="JSON 路径，如 data.token">
+                    </div>
+                    <label class="layui-form-label">Token 前缀</label>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="token_prefix" value="Bearer " placeholder="Bearer / 空 / 自定义">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">有效期(秒)</label>
+                    <div class="layui-input-inline" style="width:120px;">
+                        <input class="layui-input" name="expires_in" type="number" value="1800" min="60" max="86400">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">证书校验</label>
+                    <div class="layui-input-block">
+                        <input type="hidden" name="tls_verify_present" value="1">
+                        <label>
+                            <input type="checkbox" name="tls_verify" value="1" checked>
+                            严格校验 TLS 证书
+                        </label>
+                        <div style="color:#667085;font-size:12px;margin-top:4px;">
+                            默认开启；仅在测试环境使用自签名证书且无法配置 CA 时关闭。执行记录会明确标记关闭状态。
+                        </div>
+                    </div>
+                </div>
+                <button class="layui-btn" type="submit">保存 Token URL 方案</button>
+            </form>
+            {% elif not project_id %}
+            <div style="color:#b42318;padding:10px;">请先选择项目和环境。</div>
+            {% endif %}
+        </div>
+
+        {# ── 路径一：Recipe 导入 ── #}
+        <div id="path-recipe" class="form-section">
+            <h3>导入 Recipe JSON</h3>
+            {% if can_manage and project_id %}
+            <details open style="margin-bottom:16px;">
+                <summary><strong>内置：SSO → Session → 产品 Token</strong></summary>
+                <p style="color:#475467;margin:10px 0;">用于新项目直接创建通用三阶段 Auth Profile，不需要先手写 Recipe。导入只做本地结构校验；认证请求仍需在认证工作台显式验证。</p>
+                <form method="POST" action="{{ url_for('web.auth_import_wizard') }}" autocomplete="off">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="action" value="import_sso_product">
+                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                    <input type="hidden" name="login_mode" value="sso_product_token">
+                    <input type="hidden" name="tls_verify_present" value="1">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">方案 / 账号</label>
+                        <div class="layui-input-inline" style="width:300px;"><input class="layui-input" name="profile_name" placeholder="产品认证 - owner" required></div>
+                        <div class="layui-input-inline" style="width:150px;"><input class="layui-input" name="account_key" value="owner" required></div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">用途 / 角色</label>
+                        <div class="layui-input-inline" style="width:300px;"><input class="layui-input" name="login_scene" value="product-api"></div>
+                        <div class="layui-input-inline" style="width:150px;"><input class="layui-input" name="role_key" value="default"></div>
+                    </div>
+                    <div class="layui-form-item"><label class="layui-form-label">SSO URL</label><div class="layui-input-block"><input class="layui-input" name="sso_authorization_url" placeholder="https://identity.example.test/authorization" required></div></div>
+                    <div class="layui-form-item"><label class="layui-form-label">Session URL</label><div class="layui-input-block"><input class="layui-input" name="token_login_url" placeholder="https://login.example.test/login/token-login" required></div></div>
+                    <div class="layui-form-item"><label class="layui-form-label">换 Token URL</label><div class="layui-input-block"><input class="layui-input" name="product_verification_url" placeholder="https://api.example.test/product/verification" required></div></div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">Realm Client Token</label>
+                        <div class="layui-input-block"><input class="layui-input" type="password" name="realm_client_token" autocomplete="new-password" required><div style="color:#667085;font-size:12px;margin-top:4px;">只写入版本化 Realm Secret，不进入 Recipe、页面回显或验证证据。</div></div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">浏览器身份</label>
+                        <div class="layui-input-inline" style="width:300px;"><input class="layui-input" name="browser_id" placeholder="browserid" required></div>
+                        <div class="layui-input-inline" style="width:150px;"><input class="layui-input" name="browser_type" value="chrome" required></div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">Token 路径</label>
+                        <div class="layui-input-inline" style="width:220px;"><input class="layui-input" name="sso_token_path" value="access_token" title="SSO Token JSON 路径"></div>
+                        <div class="layui-input-inline" style="width:220px;"><input class="layui-input" name="product_token_path" value="access_token" title="产品 Token JSON 路径"></div>
+                    </div>
+                    <div class="layui-form-item"><label class="layui-form-label">业务 Origin</label><div class="layui-input-block"><textarea class="layui-textarea" name="business_origins" placeholder="留空继承环境；或每行填写一个业务 Origin"></textarea></div></div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">安全配置</label>
+                        <div class="layui-input-block"><label><input type="checkbox" name="tls_verify" value="1" checked> 严格校验 TLS</label>　<input name="max_age_seconds" type="number" value="1800" min="60" max="86400" style="width:100px;"> 秒</div>
+                    </div>
+                    <button class="layui-btn" type="submit">创建三阶段 Auth Profile</button>
+                </form>
+            </details>
+            {% endif %}
+            <details style="margin-bottom:12px;">
+                <summary><strong>📖 Recipe Schema 参考</strong></summary>
+                <div class="prompt-box">{{ recipe_schema_doc }}</div>
+            </details>
+            <details style="margin-bottom:12px;">
+                <summary><strong>🤖 AI 提示词模板</strong>（复制后粘贴给 AI，补充你的登录信息）</summary>
+                <div class="prompt-box" id="ai-prompt">{{ ai_prompt_template }}</div>
+                <button type="button" class="layui-btn layui-btn-xs layui-btn-primary" onclick="copyPrompt()">复制提示词</button>
+            </details>
+            {% if can_manage and project_id %}
+            <form method="POST" action="{{ url_for('web.auth_import_wizard') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="import_recipe">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <input type="hidden" name="env_id" value="{{ env_id }}">
+                <div class="layui-form-item">
+                    <label class="layui-form-label">方案名称</label>
+                    <div class="layui-input-inline" style="width:300px;">
+                        <input class="layui-input" name="profile_name" placeholder="例如：蒲公英 SSO" required>
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="account_key" value="owner" placeholder="账号别名">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">功能点</label>
+                    <div class="layui-input-inline" style="width:220px;">
+                        <input class="layui-input" name="login_scene" placeholder="例如：admin-login / member-login">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="role_key" value="default" placeholder="角色">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="login_mode" value="recipe" placeholder="登录模式">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">Recipe Key</label>
+                    <div class="layui-input-block">
+                        <input class="layui-input" name="recipe_key" placeholder="可选；相同 Key 表示同一流程的不同版本，不同 Key 可同时存在">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">Recipe JSON</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea code-editor" name="recipe_json" required placeholder='{"schema_version":1,"steps":[...],"output":{...}}'></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">Realm 密钥</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea" name="realm_secrets" style="min-height:60px;" placeholder='{"client_token":"xxx"} （可选，Recipe 中 {% raw %}{{secret.xxx}}{% endraw %} 引用的值）'></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">认证 Host</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea" name="auth_origins" style="min-height:60px;" placeholder="https://auth.example.com&#10;https://login.example.com&#10;（每行一个，Recipe 中的 HTTP 请求只允许发往这些 Host）"></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">业务 Host</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea" name="business_origins" style="min-height:60px;" placeholder="留空则继承环境配置&#10;https://api.example.com"></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">证书校验</label>
+                    <div class="layui-input-block">
+                        <input type="hidden" name="tls_verify_present" value="1">
+                        <label>
+                            <input type="checkbox" name="tls_verify" value="1" checked>
+                            严格校验 TLS 证书
+                        </label>
+                        <div style="color:#667085;font-size:12px;margin-top:4px;">
+                            默认开启；关闭后认证步骤和业务请求均不校验证书，并会在执行记录中警告。
+                        </div>
+                    </div>
+                </div>
+                <button class="layui-btn" type="submit">导入并激活</button>
+            </form>
+            {% elif not project_id %}
+            <div style="color:#b42318;padding:10px;">请先选择项目和环境。</div>
+            {% endif %}
+        </div>
+
+        {# ── 路径二：用户代码 ── #}
+        <div id="path-code" class="form-section">
+            <h3>管理员可信代码认证</h3>
+            <p style="color:#475467;margin-bottom:12px;">
+                编写 <code>get_auth(username, password)</code> 函数，返回 <code>{"headers": {...}, "cookies": {...}, "expires_in": 1800}</code>。<br>
+                可用模块：<code>requests, hashlib, time, json, base64, hmac, uuid, re, math, datetime</code>。
+                代码由管理员提供并视为可信插件；运行时使用独立子进程、超时和认证 Origin 白名单，但它不是敌对代码沙箱。
+            </p>
+            {% if not trusted_code_enabled %}
+            <div style="background:#fff1f3;border:1px solid #f7a8a8;padding:10px;margin-bottom:12px;">
+                可信代码功能已被 <code>API_MANAGER_ALLOW_TRUSTED_AUTH_CODE=0</code> 禁用。
+            </div>
+            {% endif %}
+            {% if can_manage and project_id %}
+            <form method="POST" action="{{ url_for('web.auth_import_wizard') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="import_code">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <input type="hidden" name="env_id" value="{{ env_id }}">
+                <div class="layui-form-item">
+                    <label class="layui-form-label">方案名称</label>
+                    <div class="layui-input-inline" style="width:300px;">
+                        <input class="layui-input" name="profile_name" placeholder="例如：自定义 SSO" required>
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="account_key" value="owner" placeholder="账号别名">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">功能点</label>
+                    <div class="layui-input-inline" style="width:220px;">
+                        <input class="layui-input" name="login_scene" placeholder="例如：partner-sdk-login">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="role_key" value="default" placeholder="角色">
+                    </div>
+                    <div class="layui-input-inline" style="width:150px;">
+                        <input class="layui-input" name="login_mode" value="trusted_code" placeholder="登录模式">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">认证 Origin</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea" name="auth_origins" required style="min-height:60px;" placeholder="https://auth.example.com&#10;每行一个；代码中的 GET/POST 只能访问这些 Origin"></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">Python 代码</label>
+                    <div class="layui-input-block">
+                        <textarea class="layui-textarea code-editor" name="user_code" required placeholder='def get_auth(username, password):
+    import requests, hashlib, time
+    # 你的登录逻辑
+    r = requests.post("https://auth.example.com/login", json={
+        "username": username,
+        "password": hashlib.md5(password.encode()).hexdigest(),
+    })
+    token = r.json()["access_token"]
+    return {
+        "headers": {"Authorization": f"Bearer {token}"},
+        "expires_in": 1800,
+    }'></textarea>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">有效期(秒)</label>
+                    <div class="layui-input-inline" style="width:120px;">
+                        <input class="layui-input" name="expires_in" type="number" value="1800" min="60" max="86400">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">证书校验</label>
+                    <div class="layui-input-block">
+                        <input type="hidden" name="tls_verify_present" value="1">
+                        <label>
+                            <input type="checkbox" name="tls_verify" value="1" checked>
+                            严格校验 TLS 证书
+                        </label>
+                        <div style="color:#667085;font-size:12px;margin-top:4px;">
+                            默认开启；关闭后可信代码的外部认证请求和业务请求均不校验证书。
+                        </div>
+                    </div>
+                </div>
+                <button class="layui-btn" type="submit" {% if not trusted_code_enabled %}disabled{% endif %}>保存代码方案</button>
+            </form>
+            {% elif not project_id %}
+            <div style="color:#b42318;padding:10px;">请先选择项目和环境。</div>
+            {% endif %}
+        </div>
+
+        {# ── 路径三：简单密码 ── #}
+        <div id="path-simple" class="form-section">
+            <h3>简单密码登录</h3>
+            <p style="color:#475467;margin-bottom:12px;">
+                适合标准 username/password 表单。配置后系统自动 POST 登录 URL 并提取 token。
+            </p>
+            <div style="padding:16px;border:1px dashed #d0d5dd;color:#667085;text-align:center;">
+                此路径复用现有的「项目环境与认证」页面中的认证方案创建表单。<br>
+                <a href="{{ url_for('web.project_auth', project_id=project_id, env_id=env_id) }}" class="layui-btn layui-btn-sm" style="margin-top:8px;">前往认证配置页</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showPath(event, name) {
+    document.querySelectorAll('.path-card').forEach(function(c) { c.classList.remove('active'); });
+    document.querySelectorAll('.form-section').forEach(function(s) { s.classList.remove('visible'); });
+    event.currentTarget.classList.add('active');
+    document.getElementById('path-' + name).classList.add('visible');
+}
+function copyPrompt() {
+    var text = document.getElementById('ai-prompt').textContent;
+    navigator.clipboard.writeText(text).then(function() {
+        layer.msg('提示词已复制到剪贴板', {icon: 1});
+    });
+}
+</script>
+{% endblock %}

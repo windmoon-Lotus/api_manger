@@ -1,0 +1,36 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "parameter.shared_value.alias_candidate",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {
+    "same_project": true,
+    "same_environment": true,
+    "principal_relation": "same_profile_revision"
+  },
+  "inputs": ["response_parameter", "request_parameter"],
+  "predicates": [
+    {"name": "parameter.canonical_name_different.v1"},
+    {"name": "endpoint.different.v1"},
+    {"name": "value.intersection_count_gte.v1", "args": {"value": 1}},
+    {"name": "parameter.resource_relation_allowed.v1"},
+    {"name": "type.compatible.v1"},
+    {"name": "locator.interpretable.v1"}
+  ],
+  "score": {
+    "base": 0.0,
+    "features": [
+      {"predicate": "legacy.weak_relation_score.v1", "args": {"name_fallback": true}, "weight": 1.0}
+    ]
+  },
+  "emit": {
+    "adapter": "parameter_relation_candidate.v1",
+    "args": {"relation": "alias_candidate"}
+  },
+  "safety": {
+    "network": "forbidden",
+    "mutation": "forbidden",
+    "max_matches": 10000
+  }
+}

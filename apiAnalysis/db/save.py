@@ -3,26 +3,26 @@
 """Converts a mitmproxy dump file to a swagger schema."""
 import json
 import re
+from http.cookies import SimpleCookie
 from urllib.parse import urlparse, urlencode
 from bson.objectid import ObjectId
 from pymongo import UpdateOne
 from typing import Any, Optional, Sequence, Union, Iterable, Dict, List
 # from swagger_utilbak import getworkbook,reverse_jsonpath
 import openpyxl
-from hashlib import md5
+from hashlib import md5, sha256
+from pathlib import Path
 
 from apiAnalysis.tool.tool import *
 from apiAnalysis.tool.api_signature import abstract_signature, api_signature_object_id
 from apiAnalysis.tool.request_sample_store import save_request_sample
-from mitmproxy.exceptions import FlowReadException
+from apiAnalysis.project_context import finish_import_run, start_import_run
+from apiAnalysis.tool.observation_store import decide_project, save_observation
+from apiAnalysis.tool.parameter_locator import iter_json_leaf_occurrences, locator_document_fields
 import apiAnalysis.tool.console_util as console_util
 from apiAnalysis.db.collection import *
 from apiAnalysis.conf.conf import logger
 from apiAnalysis.input.har_capture_reader import HarCaptureReader, har_archive_heuristic
-from apiAnalysis.input.mitmproxy_capture_reader import (
-    MitmproxyCaptureReader,
-    mitmproxy_dump_file_huristic,
-)
 
 
 def get_next_sequence(collection_name):
@@ -56,6 +56,18 @@ _LAST_PROGRESS_STEP = -1
 _PROGRESS_OUTPUT_ENABLED = True
 MAX_PARAMETER_VALUES = 20
 MAX_RESPONSE_PARAMETER_VALUES = 5
+
+
+def _cookie_parameter_names(value):
+    """Return cookie names without persisting cookie values from traffic."""
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    cookie = SimpleCookie()
+    try:
+        cookie.load(str(value or ""))
+    except Exception:
+        return []
+    return sorted(str(name) for name in cookie.keys() if name)
 
 
 def set_progress_output_enabled(enabled: bool):
@@ -198,17 +210,28 @@ def _openapi_parameters(path_item, operation):
     return unique
 
 
-def _ensure_raw_data(path, method, base_url, response_status_codes):
+def _ensure_raw_data(
+        path, method, base_url, response_status_codes, source="openapi",
+        project_id="", env_id="", import_run_id="", source_id=""):
     query = {}
     request_body = None
     full_url = _join_base_url(base_url, path)
     parsed = urlparse(full_url)
     abstract_sig = abstract_signature(method, path, query, request_body)
-    _id = ObjectId(api_signature_object_id(method, full_url, path, query, request_body, host=parsed.netloc, asset_kind="abstract"))
+    _id = ObjectId(api_signature_object_id(
+        method, full_url, path, query, request_body,
+        host=parsed.netloc, asset_kind="abstract",
+        identity_scope=str(project_id or ""),
+    ))
     data = raw_data.objects(_id=_id).first()
     if data:
+        data.source = data.source or source
+        data.source_id = data.source_id or str(source_id or "")
         data.asset_kind = data.asset_kind or "abstract"
         data.abstract_signature = data.abstract_signature or abstract_sig
+        data.project_id = str(project_id or data.project_id or "")
+        data.env_id = str(env_id or data.env_id or "")
+        data.import_run_id = str(import_run_id or data.import_run_id or "")
         if response_status_codes:
             merged_codes = list(data.response_status_code or [])
             for code in response_status_codes:
@@ -216,6 +239,17 @@ def _ensure_raw_data(path, method, base_url, response_status_codes):
                     merged_codes.append(code)
             data.response_status_code = merged_codes
         data.save()
+        if project_id:
+            ProjectAssetLink.objects(
+                project_id=str(project_id),
+                pathid=int(data.ptah_id),
+                env_id=str(env_id or ""),
+            ).update_one(
+                set__relationship="owned",
+                set__confidence=1.0,
+                set__reason_codes=["explicit_document_import"],
+                upsert=True,
+            )
         return data
     domain = None
     url = full_url
@@ -223,6 +257,11 @@ def _ensure_raw_data(path, method, base_url, response_status_codes):
         domain = parsed.netloc
     data = raw_data(
         _id=_id,
+        source=source,
+        source_id=str(source_id or ""),
+        project_id=str(project_id or ""),
+        env_id=str(env_id or ""),
+        import_run_id=str(import_run_id or ""),
         method=method,
         asset_kind="abstract",
         abstract_signature=abstract_sig,
@@ -238,15 +277,29 @@ def _ensure_raw_data(path, method, base_url, response_status_codes):
         response_status_code=response_status_codes
     )
     data.save()
+    if project_id:
+        ProjectAssetLink.objects(
+            project_id=str(project_id),
+            pathid=int(data.ptah_id),
+            env_id=str(env_id or ""),
+        ).update_one(
+            set__relationship="owned",
+            set__confidence=1.0,
+            set__reason_codes=["explicit_document_import"],
+            upsert=True,
+        )
     return data
 
 
-def data_generate_openapi(file_path, base_url=None):
+def data_generate_openapi(
+        file_path, base_url=None, project_id="", env_id="",
+        import_run_id="", source_id=""):
     with open(file_path, "r", encoding="utf-8") as f:
         openapi_doc = json.load(f)
     components = openapi_doc.get("components", {})
     base_url = _openapi_servers(openapi_doc, base_url=base_url)
     paths = openapi_doc.get("paths", {})
+    imported_ids = []
     for path, operations in paths.items():
         if not isinstance(operations, dict):
             continue
@@ -259,7 +312,18 @@ def data_generate_openapi(file_path, base_url=None):
             for code in responses.keys():
                 if str(code).isdigit():
                     response_status_codes.append(int(code))
-            data = _ensure_raw_data(path, method.upper(), base_url, response_status_codes)
+            data = _ensure_raw_data(
+                path,
+                method.upper(),
+                base_url,
+                response_status_codes,
+                source="openapi",
+                project_id=project_id,
+                env_id=env_id,
+                import_run_id=import_run_id,
+                source_id=source_id,
+            )
+            imported_ids.append(data.id)
             for param in parameters:
                 name = param.get("name")
                 position = param.get("in")
@@ -312,6 +376,7 @@ def data_generate_openapi(file_path, base_url=None):
                                 value=[]
                             )
                             Res_data.save()
+    return list(dict.fromkeys(imported_ids))
 
 
 def _postman_iter_items(items):
@@ -322,10 +387,13 @@ def _postman_iter_items(items):
             yield item
 
 
-def data_generate_postman(file_path, base_url=None):
+def data_generate_postman(
+        file_path, base_url=None, project_id="", env_id="",
+        import_run_id="", source_id=""):
     base_url = _normalize_base_url(base_url)
     with open(file_path, "r", encoding="utf-8") as f:
         postman_doc = json.load(f)
+    imported_ids = []
     for item in _postman_iter_items(postman_doc.get("item", [])):
         request = item.get("request", {})
         method = request.get("method")
@@ -367,9 +435,20 @@ def data_generate_postman(file_path, base_url=None):
                         pairs.append((p["key"], p.get("value")))
                 request_body = urlencode(pairs)
         abstract_sig = abstract_signature(method, path, query, request_body)
-        _id = ObjectId(api_signature_object_id(method, raw_url, path, query, request_body, host=parsed.netloc, asset_kind="concrete"))
+        _id = ObjectId(api_signature_object_id(
+            method,
+            raw_url,
+            path,
+            query,
+            request_body,
+            host=parsed.netloc,
+            asset_kind="concrete",
+            identity_scope=str(project_id or ""),
+        ))
         data = raw_data.objects(_id=_id).first()
         if data:
+            data.source = data.source or "postman"
+            data.source_id = data.source_id or str(source_id or "")
             if not data.url:
                 data.url = raw_url
             if not data.domain:
@@ -382,12 +461,48 @@ def data_generate_postman(file_path, base_url=None):
                 data.Max_records = 10
             data.asset_kind = data.asset_kind or "concrete"
             data.abstract_signature = data.abstract_signature or abstract_sig
+            data.project_id = str(project_id or data.project_id or "")
+            data.env_id = str(env_id or data.env_id or "")
+            data.import_run_id = str(import_run_id or data.import_run_id or "")
             if request_body and len(data.raw_req) < data.Max_records:
                 data.raw_req.append(request_body)
             data.save()
+            if project_id:
+                ProjectAssetLink.objects(
+                    project_id=str(project_id),
+                    pathid=int(data.ptah_id),
+                    env_id=str(env_id or ""),
+                ).update_one(
+                    set__relationship="owned",
+                    set__confidence=1.0,
+                    set__reason_codes=["explicit_document_import"],
+                    upsert=True,
+                )
+            save_request_sample(
+                data,
+                method=method,
+                url=raw_url,
+                path=path,
+                domain=parsed.netloc,
+                query=query,
+                headers=headers,
+                body=request_body,
+                response_status_code=None,
+                response_body=None,
+                project_id=str(project_id or ""),
+                env_id=str(env_id or ""),
+                import_run_id=str(import_run_id or ""),
+                source="postman",
+            )
+            imported_ids.append(data.id)
             continue
         data = raw_data(
             _id=_id,
+            source="postman",
+            source_id=str(source_id or ""),
+            project_id=str(project_id or ""),
+            env_id=str(env_id or ""),
+            import_run_id=str(import_run_id or ""),
             asset_kind="concrete",
             abstract_signature=abstract_sig,
             method=method.upper(),
@@ -403,6 +518,18 @@ def data_generate_postman(file_path, base_url=None):
             response_status_code=[]
         )
         data.save()
+        if project_id:
+            ProjectAssetLink.objects(
+                project_id=str(project_id),
+                pathid=int(data.ptah_id),
+                env_id=str(env_id or ""),
+            ).update_one(
+                set__relationship="owned",
+                set__confidence=1.0,
+                set__reason_codes=["explicit_document_import"],
+                upsert=True,
+            )
+        imported_ids.append(data.id)
         save_request_sample(
             data,
             method=method,
@@ -414,7 +541,12 @@ def data_generate_postman(file_path, base_url=None):
             body=request_body,
             response_status_code=None,
             response_body=None,
+            project_id=str(project_id or ""),
+            env_id=str(env_id or ""),
+            import_run_id=str(import_run_id or ""),
+            source="postman",
         )
+    return list(dict.fromkeys(imported_ids))
 
 
 def _normalize_simple_value(value):
@@ -1150,9 +1282,17 @@ def format_mongodb_table(table_name="raw_data", targets=None, path_regex=None, a
     raise ValueError("unsupported table: {}".format(table_name))
 
 
-def data_generate_mongodb(data, typevalue):
-    capture_reader: Union[MitmproxyCaptureReader, HarCaptureReader]
+def data_generate_mongodb(data, typevalue, project_id=None, env_id=None, account_id=None,
+                          workspace_id=None, import_run_id=None,
+                          data_source_id=None, source_id=None):
+    capture_reader: Any
     if typevalue == "mitm":
+        try:
+            from apiAnalysis.input.mitmproxy_capture_reader import MitmproxyCaptureReader
+        except ImportError as exc:
+            raise RuntimeError(
+                "mitmproxy capture support is optional; install requirements-capture.txt"
+            ) from exc
         capture_reader = MitmproxyCaptureReader(data, progress_callback if _PROGRESS_OUTPUT_ENABLED else None)
     elif typevalue == "har":
         capture_reader = HarCaptureReader(data, progress_callback if _PROGRESS_OUTPUT_ENABLED else None)
@@ -1160,6 +1300,33 @@ def data_generate_mongodb(data, typevalue):
     else:
         pass
     imported_ids = []
+    observed_count = 0
+    discovered_projects = set()
+    owned_import_run = None
+    source_hash = ""
+    try:
+        source_hash = sha256(Path(data).read_bytes()).hexdigest()
+    except Exception:
+        source_hash = ""
+    if not import_run_id:
+        owned_import_run = start_import_run(
+            project_id=str(project_id or ""), source_type=typevalue,
+            source_id=str(source_id or source_hash),
+            env_id=str(env_id or ""), account_id=str(account_id or ""),
+            content_hash=source_hash,
+            data_source_id=str(data_source_id or ""),
+            workspace_id=str(workspace_id or ""),
+        )
+        import_run_id = owned_import_run.import_run_id
+        data_source_id = owned_import_run.data_source_id
+    elif not data_source_id:
+        existing_run = ImportRun.objects(
+            import_run_id=str(import_run_id)
+        ).only("data_source_id", "source_id").first()
+        if existing_run:
+            data_source_id = existing_run.data_source_id
+            source_id = source_id or existing_run.source_id
+    stable_source_id = str(source_id or source_hash or import_run_id or "")
     try:
         for req in capture_reader.captured_requests():
             url = req.get_url()
@@ -1186,9 +1353,56 @@ def data_generate_mongodb(data, typevalue):
             if request_body == b'':
                 request_body = None
             abstract_sig = abstract_signature(method, path, querys, request_body)
-            _id = ObjectId(api_signature_object_id(method, url, path, querys, request_body, host=host, asset_kind="concrete"))
+            routing = decide_project(
+                method,
+                url,
+                path,
+                signature=abstract_sig,
+                explicit_project_id=str(project_id or ""),
+                data_source_id=str(data_source_id or ""),
+            )
+            selected_project_id = str(routing.get("selected_project_id") or "")
+            if selected_project_id:
+                discovered_projects.add(selected_project_id)
+            else:
+                save_observation(
+                    source_type=typevalue,
+                    source_id=stable_source_id,
+                    data_source_id=str(data_source_id or ""),
+                    method=method,
+                    url=url,
+                    path=path,
+                    request_headers=request_header,
+                    request_body=request_body,
+                    response_status=response_status_code,
+                    response_len=(
+                        len(response_body or b"")
+                        if isinstance(response_body, bytes)
+                        else len(str(response_body or ""))
+                    ),
+                    response_hash=sha256(
+                        response_body
+                        if isinstance(response_body, bytes)
+                        else str(response_body or "").encode(
+                            "utf-8", errors="ignore",
+                        )
+                    ).hexdigest(),
+                    workspace_id=str(workspace_id or ""),
+                    import_run_id=str(import_run_id or ""),
+                    account_id=str(account_id or ""),
+                    env_id=str(env_id or ""),
+                    routing_decision=routing,
+                )
+                observed_count += 1
+                continue
+            _id = ObjectId(api_signature_object_id(
+                method, url, path, querys, request_body, host=host, asset_kind="concrete",
+                identity_scope=selected_project_id,
+            ))
             data = raw_data.objects(_id=_id).first()
             if data:
+                data.source = data.source or typevalue
+                data.source_id = data.source_id or stable_source_id
                 if not data.url:
                     data.url = url
                 if not data.domain:
@@ -1201,19 +1415,24 @@ def data_generate_mongodb(data, typevalue):
                     data.Max_records = 10
                 data.asset_kind = data.asset_kind or "concrete"
                 data.abstract_signature = data.abstract_signature or abstract_sig
+                data.project_id = selected_project_id or data.project_id
+                data.env_id = str(env_id or data.env_id or "")
+                data.import_run_id = str(import_run_id or data.import_run_id or "")
                 if len(data.raw_req) < data.Max_records:
                     data.raw_req.append(request_body)
                     data.raw_res.append(response_body)
                 data.save()
             else:
                 data = raw_data(_id=_id, asset_kind="concrete", abstract_signature=abstract_sig,
+                                source=typevalue, source_id=stable_source_id,
+                                project_id=selected_project_id, env_id=str(env_id or ""), import_run_id=str(import_run_id or ""),
                                 method=method, domain=host, path=path, url=url,
                                 ptah_id=get_next_sequence("raw_data"), query=querys, headers=request_header,
                                 raw_req=[request_body], raw_res=[response_body],
                                 Max_records=10, response_status_code=[response_status_code]
                                 )
                 data.save()
-            save_request_sample(
+            sample = save_request_sample(
                 data,
                 method=method,
                 url=url,
@@ -1224,18 +1443,59 @@ def data_generate_mongodb(data, typevalue):
                 body=request_body,
                 response_status_code=response_status_code,
                 response_body=response_body,
+                project_id=selected_project_id,
+                env_id=str(env_id or ""),
+                account_id=str(account_id or ""),
+                import_run_id=str(import_run_id or ""),
+                source=typevalue,
             )
+            response_hash = sha256(response_body if isinstance(response_body, bytes) else str(response_body or "").encode("utf-8", errors="ignore")).hexdigest()
+            save_observation(
+                source_type=typevalue, source_id=stable_source_id,
+                data_source_id=str(data_source_id or ""),
+                method=method, url=url, path=path,
+                request_headers=request_header, request_body=request_body,
+                response_status=response_status_code,
+                response_len=len(response_body or b"") if isinstance(response_body, bytes) else len(str(response_body or "")),
+                response_hash=response_hash,
+                workspace_id=str(workspace_id or ""), import_run_id=str(import_run_id or ""),
+                account_id=str(account_id or ""), env_id=str(env_id or ""),
+                sample=sample, asset=data, routing_decision=routing,
+            )
+            observed_count += 1
             imported_ids.append(data.id)
     except Exception as e:
         logger.exception("data_generate failed: %s", e)
+        if owned_import_run:
+            finish_import_run(
+                owned_import_run,
+                summary={
+                    "asset_count": len(imported_ids),
+                    "observation_count": observed_count,
+                    "project_ids": sorted(discovered_projects),
+                },
+                error=str(e),
+            )
+        else:
+            raise
+    else:
+        if owned_import_run:
+            finish_import_run(
+                owned_import_run,
+                summary={
+                    "asset_count": len(imported_ids),
+                    "observation_count": observed_count,
+                    "project_ids": sorted(discovered_projects),
+                },
+            )
     return imported_ids
 
 
 def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
     query = {}
-    if raw_ids:
+    if raw_ids is not None:
         query["_id__in"] = [ObjectId(str(item)) for item in raw_ids]
-    if pathids:
+    if pathids is not None:
         query["ptah_id__in"] = list(pathids)
     objects = raw_data.objects(**query)
     if limit and limit > 0:
@@ -1253,10 +1513,15 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                                             relation="any",
                                             value=[value])
                         Req_data.save()
+                        datastore = Req_data
                     else:
                         if value not in datastore.value:
                             datastore.value.append(value)
-                            datastore.save()
+                    for field, field_value in locator_document_fields(
+                        name, direction="request", position="path",
+                    ).items():
+                        setattr(datastore, field, field_value)
+                    datastore.save()
             if data.query and isinstance(data.query, dict):
                 for parameter, value in data.query.items():
                     datastore = None
@@ -1270,13 +1535,37 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                                             relation="any",
                                             value=[value])
                         Req_data.save()
+                        datastore = Req_data
                     else:
                         if value not in datastore.value:
                             datastore.value.append(value)
-                            datastore.save()
+                    for field, field_value in locator_document_fields(
+                        parameter, direction="request", position="query",
+                    ).items():
+                        setattr(datastore, field, field_value)
+                    datastore.save()
             if data.headers and isinstance(data.headers, dict):
                 for parameter, value_list in data.headers.items():
                     if parameter.lower() == "cookie":
+                        for cookie_name in _cookie_parameter_names(value_list):
+                            datastore = req_data.objects(
+                                parameter=cookie_name, raw_data=data, position="cookie",
+                            ).first()
+                            if datastore is None:
+                                datastore = req_data(
+                                    raw_data=data,
+                                    Content_type="cookie",
+                                    parameter=cookie_name,
+                                    position="cookie",
+                                    relation="any",
+                                    value=[],
+                                    source_meta={"sensitive_value_omitted": True},
+                                )
+                            for field, field_value in locator_document_fields(
+                                cookie_name, direction="request", position="cookie",
+                            ).items():
+                                setattr(datastore, field, field_value)
+                            datastore.save()
                         continue
                     value = value_list[0] if isinstance(value_list, list) and value_list else value_list
                     datastore = None
@@ -1290,18 +1579,25 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                                             relation="any",
                                             value=[value])
                         Req_data.save()
+                        datastore = Req_data
                     else:
                         if value not in datastore.value:
                             datastore.value.append(value)
-                            datastore.save()
+                    for field, field_value in locator_document_fields(
+                        parameter, direction="request", position="header",
+                    ).items():
+                        setattr(datastore, field, field_value)
+                    datastore.save()
             for requests in data.raw_req:
                 #print(requests, 1234)
                 if requests is not None:
                     #print(data.path,"req")
                     body, content_type = body_parse(requests)
                     if content_type is not None:
-                        parameters = flatten_json(body)
-                        for parameter, value in parameters.items():
+                        for locator, value in iter_json_leaf_occurrences(
+                            body, direction="request", position="body",
+                        ):
+                            parameter = locator.get("raw_path") or locator.get("schema_path")
                             datastore = None
                             if req_data.objects:
                                 datastore = req_data.objects(parameter=parameter, raw_data=data, position="body").first()
@@ -1314,10 +1610,16 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                                                     value=[value]
                                                     )
                                 Req_data.save()
+                                datastore = Req_data
                             else:
                                 if value not in datastore.value:
                                     datastore.value.append(value)
-                                    datastore.save()
+                            for field, field_value in locator_document_fields(
+                                parameter, direction="request", position="body",
+                                source_meta={"locator": locator},
+                            ).items():
+                                setattr(datastore, field, field_value)
+                            datastore.save()
                 else:
                     datastore = None
                     if req_data.objects:
@@ -1335,9 +1637,10 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                     body, content_type = body_parse(response)
                     if content_type:
                         # 扁平化 JSON 数据
-                        parameters = flatten_json(body)
-                        #print(parameters,type(parameters))
-                        for parameter, value in parameters.items():
+                        for locator, value in iter_json_leaf_occurrences(
+                            body, direction="response", position="body",
+                        ):
+                            parameter = locator.get("raw_path") or locator.get("schema_path")
                             #print(123111111111111111)
                             datastore = None
                             # 检查是否存在对应的 res_data 对象
@@ -1355,11 +1658,18 @@ def parameter_disassemble_mongodb(raw_ids=None, pathids=None, limit=0):
                                     value=[value]
                                 )
                                 Res_data.save()
+                                datastore = Res_data
                             else:
                                 # 更新现有的 res_data 对象
                                 if value not in datastore.value:
                                     datastore.value.append(value)
                                     datastore.save()
+                            for field, field_value in locator_document_fields(
+                                parameter, direction="response", position="body",
+                                source_meta={"locator": locator},
+                            ).items():
+                                setattr(datastore, field, field_value)
+                            datastore.save()
                 else:
                     # 创建并保存内容类型为空的 res_data 对象
                     datastore = None
@@ -1384,10 +1694,17 @@ def parameter_date_mongodb(rawdatacolletion=None, raw_ids=None, pathids=None,
     query = {}
     if rawdatacolletion is not None:
         query["raw_data__in"] = rawdatacolletion if isinstance(rawdatacolletion, list) else [rawdatacolletion]
-    if raw_ids:
+    if raw_ids is not None:
         query["raw_data__in"] = [ObjectId(str(item)) for item in raw_ids]
-    if pathids:
-        query["raw_data__ptah_id__in"] = list(pathids)
+    if pathids is not None:
+        scoped_assets = list(raw_data.objects(ptah_id__in=list(pathids)).only("pk"))
+        if "raw_data__in" in query:
+            scoped_ids = {str(item.pk) for item in scoped_assets}
+            query["raw_data__in"] = [
+                item for item in query["raw_data__in"] if str(getattr(item, "id", item)) in scoped_ids
+            ]
+        else:
+            query["raw_data__in"] = scoped_assets
     request_queryset = req_data.objects(**query)
     response_queryset = res_data.objects(**query)
     try:

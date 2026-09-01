@@ -1,158 +1,107 @@
-import hashlib
+"""Application factory and shared infrastructure handles.
+
+The Web process is intentionally passive: creating a Flask application only
+connects model metadata and registers HTTP routes.  Network execution,
+relation analysis, and periodic recovery are owned by separate CLI processes.
+"""
+import os
 
 import redis
-from apscheduler.schedulers.blocking import BlockingScheduler
-from apiAnalysis.common.func import *
-from apiAnalysis.common.domain_root import *
+
+from apiAnalysis.common.func import (
+    format_json,
+    is_manager,
+    str_show,
+    time_now,
+    time_show,
+)
+from apiAnalysis.common.i18n import get_lang, t
 from apiAnalysis.conf.conf import logger
-from apiAnalysis.model.model import PolicyEnum, HeaderModel, BodyModel
-from apiAnalysis.db.collection import Workspace
-from apiAnalysis.conf.secret import *
-from apiAnalysis.common.i18n import t, get_lang
+from apiAnalysis.conf.secret import (
+    mongo_database,
+    mongo_host,
+    mongo_password,
+    mongo_port,
+    mongo_user,
+    redis_db,
+    redis_host,
+    redis_password,
+    redis_port,
+    secret_key,
+    secret_key_is_ephemeral,
+)
+from apiAnalysis.model.model import PolicyEnum
 from apiAnalysis.runtime_check import format_checks, run_checks
+from apiAnalysis.version import __version__
+
+
 app_path = os.path.dirname(os.path.realpath(__file__))
+redis_pool = redis.ConnectionPool(
+    host=redis_host,
+    port=redis_port,
+    db=redis_db,
+    password=redis_password,
+)
 
-redis_pool = redis.ConnectionPool(host=redis_host, port=redis_port, db=redis_db, password=redis_password)
 
-# 简单初始化两个账号，实际使用时可自行接入公司内部sso
-users = {
-    'admin': {
-        'password': 'admin123',
-        'role': [PolicyEnum.MANAGE.value, PolicyEnum.ACCESS.value]
-    },
-    'normal': {
-        'password': 'normal123',
-        'role': [PolicyEnum.ACCESS.value]
-    }
-}
+def _build_local_users():
+    users = {}
+    admin_password = os.getenv("API_MANAGER_ADMIN_PASSWORD")
+    normal_password = os.getenv("API_MANAGER_NORMAL_PASSWORD")
+    if admin_password:
+        users[os.getenv("API_MANAGER_ADMIN_USERNAME", "admin")] = {
+            "password": admin_password,
+            "role": [PolicyEnum.MANAGE.value, PolicyEnum.ACCESS.value],
+        }
+    if normal_password:
+        users[os.getenv("API_MANAGER_NORMAL_USERNAME", "normal")] = {
+            "password": normal_password,
+            "role": [PolicyEnum.ACCESS.value],
+        }
+    if os.getenv("API_MANAGER_ALLOW_INSECURE_DEFAULT_USERS", "0") == "1":
+        logger.warning("insecure built-in Web users are enabled for local migration only")
+        users.setdefault("admin", {
+            "password": "admin123",
+            "role": [PolicyEnum.MANAGE.value, PolicyEnum.ACCESS.value],
+        })
+        users.setdefault("normal", {
+            "password": "normal123",
+            "role": [PolicyEnum.ACCESS.value],
+        })
+    return users
+
+
+users = _build_local_users()
 
 
 def init():
-    from threading import Thread
-    from apiAnalysis.core.jobs import status_clear
-
-    # 定时任务
-    scheduler = BlockingScheduler()
-    scheduler.add_job(status_clear, 'cron', hour=0)
-    Thread(target=scheduler.start, daemon=True).start()
-
-    # mongo
+    """Register the default Mongo connection without starting background work."""
     from mongoengine import connect
-    connect(
+
+    return connect(
         mongo_database,
         username=mongo_user,
         password=mongo_password,
         host=mongo_host,
         port=mongo_port,
-        connect=False
+        connect=False,
     )
-from apiAnalysis.core.lib import deal_scan, dictt, get_roles
-
-def scan():
-    from pymongo import MongoClient
-
-    if mongo_password == "":
-        client = MongoClient(mongo_host, mongo_port)
-    else:
-        client = MongoClient('mongodb://%s:%s@%s:%s' % (mongo_user, mongo_password, mongo_host, mongo_port))
-    db = client[mongo_database]
-    data = db["response"]
-    # data=db["packet_data"]
-    rows = data.find()
-    #print(134)
-    for row in rows:
-
-        #print(get_domain_root(row["request"]["url"]))
-        if get_domain_root(row["request"]["url"]) == "example.com":
-            for ws in Workspace.objects(depart_name="example", system_name="all", status=Workspace.STATUS_START,
-                                            cname="admin"):
-                assert isinstance(ws, Workspace)
-                #print(3214565)
-                rs = redis.Redis(connection_pool=redis_pool)
-                # 去掉完全一样的请求
-                endata=str(row["request"]["url"])+str(row["request"]["method"])
-                digest = hashlib.md5(str(endata).encode('utf-8')).digest()
-                heap = rs.hget("parse_heap:{}:{}".format(ws.cname, str(ws.id)), digest)
-                #if heap:
-                #    logger.debug("filter the same request: {}".format(row["request"]["url"]))
-                #    continue
-                #rs.hset("parse_heap:{}:{}".format(ws.cname, str(ws.id)), digest, row["request"]["url"])
-                try:
-
-                    heads = row["request"]["headers"]
-                    # print(row["_id"])
-                    head = dictt(heads)
-                    if row["request"]["method"] not in [HeaderModel.METHOD_GET, HeaderModel.METHOD_POST,
-                                                        HeaderModel.METHOD_DELETE,
-                                                        HeaderModel.METHOD_PUT]:
-                        logger.error("暂不支持的方法：{}".format(row["request"]["method"]))
-                        continue
-                    if "postData" in row["request"]:
-                        header = HeaderModel(url=row["request"]["url"], method=row["request"]["method"], header=head)
-                        body = BodyModel(row["request"]["postData"]["text"], charset='utf-8')
-                        deal_scan("test", header, body, ws, get_roles(ws))
-                        logger.debug("scan post body parsed for url=%s", row["request"]["url"])
-                    else:
-                        header = HeaderModel(url=row["request"]["url"], method=row["request"]["method"], header=head)
-                        body = BodyModel()
-                        deal_scan("test", header, body, ws, get_roles(ws))
-                        logger.debug("scan request parsed for url=%s", row["request"]["url"])
-
-
-                except Exception as e:
-                    logger.exception(e)
-        else:
-            #print(123)
-            heads = row["request"]["headers"]
-            # print(row["_id"])
-            head = dictt(heads)
-            host = head["Host"]
-            #print(host)
-            for ws in Workspace.objects(hosts=host, status=Workspace.STATUS_START,
-                                        depart_name="example"):
-                assert isinstance(ws, Workspace)
-                logger.debug("scan workspace matched: %s", ws.id)
-                rs = redis.Redis(connection_pool=redis_pool)
-                # 去掉完全一样的请求
-                endata = str(row["request"]["url"]) + str(row["request"]["method"])
-                digest = hashlib.md5(str(endata).encode('utf-8')).digest()
-                heap = rs.hget("parse_heap:{}:{}".format(ws.cname, str(ws.id)), digest)
-                if heap:
-                    logger.debug("filter the same request: {}".format(row["request"]["url"]))
-                    continue
-                rs.hset("parse_heap:{}:{}".format(ws.cname, str(ws.id)), digest, row["request"]["url"])
-                try:
-                    if row["request"]["method"] not in [HeaderModel.METHOD_GET, HeaderModel.METHOD_POST,
-                                                        HeaderModel.METHOD_DELETE,
-                                                        HeaderModel.METHOD_PUT]:
-                        logger.error("暂不支持的方法：{}".format(row["request"]["method"]))
-                        continue
-                    if "postData" in row["request"]:
-                        header = HeaderModel(url=row["request"]["url"], method=row["request"]["method"],
-                                             header=head)
-                        body = BodyModel(row["request"]["postData"]["text"], charset='utf-8')
-                        deal_scan("test", header, body, ws, get_roles(ws))
-                        logger.debug("scan post body parsed for url=%s", row["request"]["url"])
-                    else:
-                        header = HeaderModel(url=row["request"]["url"], method=row["request"]["method"],
-                                             header=head)
-                        body = BodyModel()
-                        deal_scan("test", header, body, ws, get_roles(ws))
-                        logger.debug("scan request parsed for url=%s", row["request"]["url"])
-
-                except Exception as e:
-                    logger.exception(e)
 
 
 def create_app():
+    """Create the passive Flask Web application."""
     from flask import Flask
     from flask_cors import CORS
-    from .web import bp_api, bp_web, bp_ws
-    from .core.lib import ScanThread
+
     from .conf.conf import cors_origin
+    from .web import bp_api, bp_web
 
     checks = run_checks(include_tools=False)
     logger.info("startup checks:\n%s", format_checks(checks))
+    if not users:
+        logger.warning("no local Web user is configured; set API_MANAGER_ADMIN_PASSWORD before login")
+    if secret_key_is_ephemeral:
+        logger.warning("API_MANAGER_SECRET_KEY is not set; Web sessions will reset on restart")
 
     init()
 
@@ -160,30 +109,17 @@ def create_app():
     app.secret_key = secret_key
 
     CORS(bp_api, supports_credentials=True, origins=cors_origin)
-    CORS(bp_ws, supports_credentials=True, origins=cors_origin)
-
     app.register_blueprint(bp_api)
     app.register_blueprint(bp_web)
-    app.register_blueprint(bp_ws)
 
-    # jinja2 function
-    app.add_template_global(system_types, 'system_types')
-    app.add_template_global(workspace_status, 'workspace_status')
-    app.add_template_global(func_account, 'func_account')
-    app.add_template_global(is_manager, 'is_manager')
-    app.add_template_global(time_now, 'time_now')
-    app.add_template_global(t, 't')
-    app.add_template_global(get_lang, 'get_lang')
+    app.add_template_global(is_manager, "is_manager")
+    app.add_template_global(time_now, "time_now")
+    app.add_template_global(t, "t")
+    app.add_template_global(get_lang, "get_lang")
+    app.add_template_global(__version__, "app_version")
 
-    app.add_template_filter(time_show, 'time_show')
-    app.add_template_filter(ws_roles, 'ws_roles')
-    app.add_template_filter(format_json, 'json_show')
-    app.add_template_filter(format_request, 'request_show')
-    app.add_template_filter(format_response, 'response_show')
-    app.add_template_filter(str_show, 'str_show')
-    app.add_template_filter(request_num, 'request_num')
-
-    # 开启扫描任务
-    ScanThread().start()
+    app.add_template_filter(time_show, "time_show")
+    app.add_template_filter(format_json, "json_show")
+    app.add_template_filter(str_show, "str_show")
 
     return app

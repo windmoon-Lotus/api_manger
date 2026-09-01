@@ -6,11 +6,20 @@ from urllib.parse import urlparse
 from bson.objectid import ObjectId
 
 from apiAnalysis.db.collection import raw_data, req_data, res_data
+from apiAnalysis.project_context import ensure_project_for_source, finish_import_run, start_import_run
 from apiAnalysis.db.save import get_next_sequence
 from apiAnalysis.tool.api_signature import abstract_signature, api_signature_object_id
+from apiAnalysis.tool.parameter_locator import locator_document_fields
 
 
-HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+# Apifox projects may contain both ordinary HTTP endpoints and WebDAV
+# endpoints.  Keep a conservative method allow-list, but cover the standard
+# WebDAV verbs so a full documentation import does not silently omit them.
+HTTP_METHODS = {
+    "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT",
+    "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK",
+    "REPORT", "SEARCH", "MKACTIVITY", "CHECKOUT", "MERGE", "ACL",
+}
 SENSITIVE_HINTS = ("authorization", "cookie", "token", "password", "passwd", "secret", "session")
 # Optional built-in serverId -> baseUrl map for a specific deployment. Leave
 # empty for generic use; supply hosts per import via --base-url or the per-import
@@ -62,7 +71,7 @@ def _endpoint_base_url(endpoint: Dict[str, Any], fallback_base_url: str = "") ->
     # callers can route a project to its own host without editing this module.
     if fallback:
         return fallback
-    return FORMAL_SERVER_BASE_URLS.get(server_id) or FORMAL_SERVER_BASE_URLS["default"]
+    return FORMAL_SERVER_BASE_URLS.get(server_id) or FORMAL_SERVER_BASE_URLS.get("default", "")
 
 
 def _enabled(items: Optional[Iterable[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -160,8 +169,8 @@ def _response_status_codes(endpoint: Dict[str, Any]) -> List[int]:
     return codes
 
 
-def _endpoint_source_meta(endpoint: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+def _endpoint_source_meta(endpoint: Dict[str, Any], source_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    meta = {
         "apifox_endpoint_id": endpoint.get("id"),
         "apifox_project_id": endpoint.get("projectId"),
         "apifox_module_id": endpoint.get("moduleId"),
@@ -176,6 +185,9 @@ def _endpoint_source_meta(endpoint: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": endpoint.get("updatedAt"),
         "custom_api_fields": endpoint.get("customApiFields") or {},
     }
+    if source_context:
+        meta.update(source_context)
+    return meta
 
 
 def _param_source_meta(param: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,10 +209,10 @@ def _response_source_meta(response: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _upsert_raw(endpoint: Dict[str, Any], base_url: str) -> raw_data:
-    method = str(endpoint.get("method") or "GET").upper()
-    if method not in HTTP_METHODS:
-        method = "GET"
+def _upsert_raw(endpoint: Dict[str, Any], base_url: str, source_context: Optional[Dict[str, Any]] = None) -> raw_data:
+    method = str(endpoint.get("method") or "").upper()
+    if not method:
+        raise ValueError("Apifox endpoint has no method")
     path = endpoint.get("path") or endpoint.get("name") or "/"
     url = _join_url(_endpoint_base_url(endpoint, base_url), path)
     parsed = urlparse(url)
@@ -208,8 +220,24 @@ def _upsert_raw(endpoint: Dict[str, Any], base_url: str) -> raw_data:
     raw_id = ObjectId(api_signature_object_id(method, url, path, {}, None, host=parsed.netloc, asset_kind="abstract"))
     source_id = str(endpoint.get("id") or "")
     data = raw_data.objects(source="apifox", source_id=source_id).first() if source_id else None
+    if data:
+        existing_project = str((data.source_meta or {}).get("apifox_project_id") or "")
+        incoming_project = str(endpoint.get("projectId") or "")
+        if existing_project and incoming_project and existing_project != incoming_project:
+            data = None
     if not data:
-        data = raw_data.objects(_id=raw_id).first()
+        signature_data = raw_data.objects(_id=raw_id).first()
+        # A deterministic API signature is useful for ordinary imports, but it
+        # must not collapse distinct Apifox source records or projects.
+        if signature_data is None:
+            data = None
+        elif signature_data.source == "apifox" and signature_data.source_id == source_id:
+            data = signature_data
+        elif signature_data.source == "apifox" and str((signature_data.source_meta or {}).get("apifox_project_id") or "") == str(endpoint.get("projectId") or "") and not source_id:
+            data = signature_data
+        else:
+            raw_id = ObjectId()
+            data = None
     status_codes = _response_status_codes(endpoint)
     tags = endpoint.get("tags") or []
     tag_text = ",".join(str(item) for item in tags) if isinstance(tags, list) else str(tags or "")
@@ -218,7 +246,10 @@ def _upsert_raw(endpoint: Dict[str, Any], base_url: str) -> raw_data:
             _id=raw_id,
             source="apifox",
             source_id=source_id,
-            source_meta=_endpoint_source_meta(endpoint),
+            source_meta=_endpoint_source_meta(endpoint, source_context),
+            project_id=str((source_context or {}).get("project_id") or ""),
+            env_id=str((source_context or {}).get("env_id") or ""),
+            import_run_id=str((source_context or {}).get("import_run_id") or ""),
             asset_kind="abstract",
             abstract_signature=signature,
             domain=parsed.netloc,
@@ -238,13 +269,16 @@ def _upsert_raw(endpoint: Dict[str, Any], base_url: str) -> raw_data:
     else:
         data.source = data.source or "apifox"
         data.source_id = data.source_id or source_id
-        data.source_meta = _endpoint_source_meta(endpoint)
+        data.source_meta = _endpoint_source_meta(endpoint, source_context)
+        data.project_id = str((source_context or {}).get("project_id") or data.project_id or "")
+        data.env_id = str((source_context or {}).get("env_id") or data.env_id or "")
+        data.import_run_id = str((source_context or {}).get("import_run_id") or data.import_run_id or "")
         data.asset_kind = data.asset_kind or "abstract"
-        data.abstract_signature = data.abstract_signature or signature
+        data.abstract_signature = signature
         data.domain = parsed.netloc
         data.path = path
         data.url = url
-        data.method = data.method or method
+        data.method = method
         data.des = endpoint.get("description") or data.des
         data.tags = tag_text or data.tags
         merged = list(data.response_status_code or [])
@@ -256,7 +290,7 @@ def _upsert_raw(endpoint: Dict[str, Any], base_url: str) -> raw_data:
     return data
 
 
-def _upsert_req(data: raw_data, name: str, position: str, required: bool = False, param_type: str = "", desc: str = "", values=None, content_type: str = "", source_meta=None) -> None:
+def _upsert_req(data: raw_data, name: str, position: str, required: bool = False, param_type: str = "", desc: str = "", values=None, content_type: str = "", source_meta=None, schema_path: bool = False) -> None:
     if not name:
         return
     item = req_data.objects(raw_data=data, parameter=name, position=position).first()
@@ -267,6 +301,11 @@ def _upsert_req(data: raw_data, name: str, position: str, required: bool = False
     item.des = desc or item.des
     item.Content_type = content_type or position
     item.source_meta = source_meta or item.source_meta or {}
+    for field, field_value in locator_document_fields(
+        name, direction="request", position=position,
+        source_meta=item.source_meta, schema=schema_path if position == "body" else None,
+    ).items():
+        setattr(item, field, field_value)
     existing = list(item.value or [])
     for value in values or []:
         if value not in existing:
@@ -285,6 +324,11 @@ def _upsert_res(data: raw_data, name: str, content_type: str = "", param_type: s
     item.type = _coerce_type_str(param_type) or item.type
     item.des = desc or item.des
     item.source_meta = source_meta or item.source_meta or {}
+    for field, field_value in locator_document_fields(
+        name, direction="response", position="body",
+        source_meta=item.source_meta, schema=True,
+    ).items():
+        setattr(item, field, field_value)
     item.save()
 
 
@@ -323,6 +367,7 @@ def _import_request_params(endpoint: Dict[str, Any], data: raw_data) -> int:
             values=_safe_example(name, param.get("example")),
             content_type=content_type,
             source_meta=_param_source_meta(param),
+            schema_path=True,
         )
         count += 1
     for param in _flatten_schema(body.get("jsonSchema") or body.get("schema") or {}):
@@ -336,6 +381,7 @@ def _import_request_params(endpoint: Dict[str, Any], data: raw_data) -> int:
             values=_safe_example(param["name"], param.get("example")),
             content_type=content_type,
             source_meta={"schema_source": "request_body_json_schema"},
+            schema_path=True,
         )
         count += 1
     return count
@@ -358,12 +404,26 @@ def _import_response_params(endpoint: Dict[str, Any], data: raw_data) -> int:
     return count
 
 
-def import_apifox_detail_file(path: Path, base_url: str = "") -> Dict[str, Any]:
+def import_apifox_detail_file(path: Path, base_url: str = "", source_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     doc = _load_json(path)
     endpoint = doc.get("data") or doc
     if endpoint.get("type") and endpoint.get("type") != "http":
         return {"imported": False, "reason": "non_http", "file": str(path)}
-    data = _upsert_raw(endpoint, base_url=base_url)
+    method = str(endpoint.get("method") or "").upper()
+    if method not in HTTP_METHODS:
+        return {
+            "imported": False,
+            "reason": "unsupported_http_method",
+            "method": method,
+            "endpoint_id": endpoint.get("id"),
+            "file": str(path),
+        }
+    data = _upsert_raw(endpoint, base_url=base_url, source_context={
+        "source_file": str(path),
+        "resolved_base_url": _endpoint_base_url(endpoint, base_url),
+        "resolved_host": urlparse(_join_url(_endpoint_base_url(endpoint, base_url), endpoint.get("path") or "")).netloc,
+        **(source_context or {}),
+    })
     req_count = _import_request_params(endpoint, data)
     res_count = _import_response_params(endpoint, data)
     return {
@@ -378,31 +438,70 @@ def import_apifox_detail_file(path: Path, base_url: str = "") -> Dict[str, Any]:
 
 
 def import_apifox_details(details_dir: Path, base_url: str = "", limit: int = 0,
-                          server_map: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                          server_map: Optional[Dict[str, str]] = None,
+                          source_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     global _PROJECT_SERVER_BASE_URLS
     _PROJECT_SERVER_BASE_URLS = dict(server_map or {})
     files = sorted(Path(details_dir).glob("*.json"))
     if limit and limit > 0:
         files = files[:limit]
+    context = dict(source_context or {})
+    apifox_project_id = ""
+    apifox_project_name = ""
+    for file_path in files:
+        candidate = _load_json(file_path)
+        endpoint = candidate.get("data") or candidate
+        if endpoint.get("projectId"):
+            apifox_project_id = str(endpoint.get("projectId"))
+            apifox_project_name = str(endpoint.get("projectName") or endpoint.get("name") or "")
+            break
+    import_run = None
+    owns_import_run = False
+    if apifox_project_id:
+        if not context.get("project_id"):
+            project = ensure_project_for_source(
+                "apifox", apifox_project_id,
+                name=context.get("project_name") or apifox_project_name or f"Apifox {apifox_project_id}",
+                env_id=str(context.get("env_id") or ""),
+            )
+            context["project_id"] = project["project_id"]
+        context["internal_project_id"] = context["project_id"]
+        if not context.get("import_run_id"):
+            import_run = start_import_run(
+                project_id=context["project_id"], source_type="apifox", source_id=apifox_project_id,
+                env_id=str(context.get("env_id") or ""), account_id=str(context.get("account_id") or ""),
+            )
+            context["import_run_id"] = import_run.import_run_id
+            owns_import_run = True
     imported = 0
     skipped = 0
     req_params = 0
     res_params = 0
     pathids: List[int] = []
-    for file_path in files:
-        result = import_apifox_detail_file(file_path, base_url=base_url)
-        if result.get("imported"):
-            imported += 1
-            req_params += int(result.get("req_params") or 0)
-            res_params += int(result.get("res_params") or 0)
-            pathids.append(int(result["pathid"]))
-        else:
-            skipped += 1
-    return {
+    try:
+        for file_path in files:
+            result = import_apifox_detail_file(file_path, base_url=base_url, source_context=context)
+            if result.get("imported"):
+                imported += 1
+                req_params += int(result.get("req_params") or 0)
+                res_params += int(result.get("res_params") or 0)
+                pathids.append(int(result["pathid"]))
+            else:
+                skipped += 1
+    except Exception as exc:
+        if owns_import_run and import_run:
+            finish_import_run(import_run, summary={"files": len(files), "imported": imported, "skipped": skipped}, error=str(exc))
+        raise
+    summary = {
         "files": len(files),
         "imported": imported,
         "skipped": skipped,
         "req_params": req_params,
         "res_params": res_params,
         "pathids": pathids,
+        "project_id": str(context.get("project_id") or ""),
+        "import_run_id": str(context.get("import_run_id") or ""),
     }
+    if owns_import_run and import_run:
+        finish_import_run(import_run, summary={key: value for key, value in summary.items() if key != "pathids"})
+    return summary

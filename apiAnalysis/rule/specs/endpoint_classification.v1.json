@@ -1,0 +1,26 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "endpoint.legacy_score.classification",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {
+    "same_project": false,
+    "same_environment": false,
+    "principal_relation": "any"
+  },
+  "inputs": ["endpoint"],
+  "predicates": [],
+  "score": {
+    "base": 0.0,
+    "features": []
+  },
+  "emit": {
+    "adapter": "endpoint_classification.v1"
+  },
+  "safety": {
+    "network": "forbidden",
+    "mutation": "forbidden",
+    "max_matches": 10000
+  }
+}

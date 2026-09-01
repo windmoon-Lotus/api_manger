@@ -1,0 +1,33 @@
+<style>
+    .knowledge-shell { background:#0f172a; color:#fff; border:1px solid #0f172a; margin-bottom:12px; }
+    .knowledge-shell__head { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 16px 10px; }
+    .knowledge-shell__title { font-size:20px; font-weight:650; letter-spacing:.2px; }
+    .knowledge-shell__sub { color:#cbd5e1; margin-top:3px; line-height:1.55; }
+    .knowledge-shell__tabs { display:flex; gap:2px; padding:0 10px; border-top:1px solid #334155; }
+    .knowledge-shell__tabs a { color:#cbd5e1; padding:11px 16px; text-decoration:none; border-bottom:3px solid transparent; }
+    .knowledge-shell__tabs a:hover { color:#fff; background:#1e293b; }
+    .knowledge-shell__tabs a.active { color:#fff; border-bottom-color:#2dd4bf; background:#1e293b; font-weight:600; }
+    .knowledge-shell__utility { color:#99f6e4; white-space:nowrap; }
+    @media (max-width:760px) {
+        .knowledge-shell__head { display:block; }
+        .knowledge-shell__utility { display:inline-block; margin-top:8px; }
+        .knowledge-shell__tabs { overflow:auto; }
+        .knowledge-shell__tabs a { white-space:nowrap; }
+    }
+</style>
+<section class="knowledge-shell">
+    <div class="knowledge-shell__head">
+        <div>
+            <div class="knowledge-shell__title">接口知识中心</div>
+            <div class="knowledge-shell__sub">参数是节点，关系是可验证的边，链路是已验证关系组成的业务路径。</div>
+        </div>
+        {% if project_id is defined and project_id %}
+        <a class="knowledge-shell__utility" href="{{ url_for('web.project_auth', project_id=project_id) }}">环境、Host 与认证方案</a>
+        {% endif %}
+    </div>
+    <nav class="knowledge-shell__tabs">
+        <a class="{% if knowledge_nav_active == 'parameters' %}active{% endif %}" href="{{ url_for('web.parameter_priority', project_id=project_id if project_id is defined else '') }}">参数资产</a>
+        <a class="{% if knowledge_nav_active == 'relations' %}active{% endif %}" href="{{ url_for('web.parameter_relations', project_id=project_id if project_id is defined else '') }}">关系验证</a>
+        <a class="{% if knowledge_nav_active == 'chains' %}active{% endif %}" href="{{ url_for('web.interface_chains', project_id=project_id if project_id is defined else '') }}">链路编排</a>
+    </nav>
+</section>

@@ -109,7 +109,10 @@ def _shape_key(key):
 def body_shape_signature(body):
     if body in [None, b"", ""]:
         return {"content_type": "", "keys": []}
-    parsed, content_type = body_parse(body)
+    if isinstance(body, (dict, list)):
+        parsed, content_type = body, "application/json"
+    else:
+        parsed, content_type = body_parse(body)
     if not content_type:
         return {"content_type": "", "keys": []}
     keys = sorted(set(_shape_key(key) for key in flatten_json(parsed).keys() if key != ""))
@@ -155,6 +158,9 @@ def abstract_signature(method, path, query=None, body=None):
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def api_signature_object_id(method, url, path, query, body, host=None, asset_kind="concrete"):
-    digest = hashlib.md5(api_signature(method, url, path, query, body, host=host, asset_kind=asset_kind).encode("utf-8")).hexdigest()
+def api_signature_object_id(method, url, path, query, body, host=None, asset_kind="concrete", identity_scope=""):
+    material = api_signature(method, url, path, query, body, host=host, asset_kind=asset_kind)
+    if identity_scope:
+        material += "|identity_scope=" + str(identity_scope)
+    digest = hashlib.md5(material.encode("utf-8")).hexdigest()
     return digest[:24]

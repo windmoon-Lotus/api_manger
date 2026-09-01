@@ -1,6 +1,6 @@
-from . import bp_api, bp_web, bp_ws
+from . import bp_api, bp_web
 from ..model.model import Resp
-from ..model.exception import ApiException, WsException
+from ..model.exception import ApiException
 from flask import jsonify, current_app, session
 from ..conf.conf import logger
 
@@ -58,16 +58,4 @@ def web_assert(e):
     """
     logger.error("{} assert error!".format(session.get('username')), exc_info=True)
     return jsonify(Resp(Resp.ERROR, "断言异常！{}".format(str(e))))
-
-
-@bp_ws.errorhandler(WsException)
-def ws_exception(e):
-    logger.error("{} except: {}".format(session.get('username'), e), exc_info=True)
-    return jsonify(Resp(Resp.ERROR, str(e)))
-
-
-@bp_ws.errorhandler(Exception)
-def exception(e):
-    logger.error("{} except: {}".format(session.get('username'), e), exc_info=True)
-    return jsonify(Resp(Resp.ERROR, str(e)))
 

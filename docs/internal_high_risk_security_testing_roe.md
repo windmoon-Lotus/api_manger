@@ -15,7 +15,7 @@ while keeping tests controlled, attributable, reversible, and auditable.
   expected impact, stop condition, and rollback/cleanup plan.
 - Evidence must be sufficient for engineering remediation, not excessive.
 - Credentials, tokens, cookies, raw responses, and real user/resource IDs stay
-  in local private storage such as `D:\接口测试\.secrets`.
+  in the external private directory configured by `API_MANAGER_DATA_DIR`.
 - Findings must be validated before escalation; `potential_vuln` is not the
   same as a confirmed vulnerability.
 
@@ -38,7 +38,7 @@ Before running a high-risk round, record:
 Recommended storage:
 
 - RoE summary: `docs\security_profiles\` or project docs
-- Secrets and raw evidence: `D:\接口测试\.secrets`
+- Secrets and raw evidence: `$env:API_MANAGER_DATA_DIR`
 - Persistent conclusions: `security_test_run`, `security_test_result`
 
 ## Test Levels
@@ -413,5 +413,5 @@ docs\internal_high_risk_security_testing_roe.md. Use api_manger for controlled
 execution and result storage. Use Claude-BugHunter only as a local methodology
 and checklist library. Do not run broad recon, blind scanning, destructive
 payloads, stealth, persistence, or lateral movement. Keep secrets and raw
-evidence under D:\接口测试\.secrets.
+evidence under the external directory configured by `API_MANAGER_DATA_DIR`.
 ```

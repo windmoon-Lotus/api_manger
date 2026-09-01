@@ -1,12 +1,13 @@
-from apiAnalysis.conf.conf import error, account, cname, logger
+from apiAnalysis.conf.conf import logger
 import json
-import copy
+from bson import ObjectId
 from apiAnalysis.db.collection import *
-from apiAnalysis.db.collection import Workspace
-from apiAnalysis.core.lib import get_roles
-from apiAnalysis.tool.tool import deal_request, deal_raw, sheer_parameters
-from apiAnalysis.tool.compose_request import build_compose_record, build_request_payload
-from apiAnalysis.rule.privilege import PrivilegeEngine
+from apiAnalysis.tool.compose_request import build_compose_record
+from apiAnalysis.tool.parameter_locator import LOCATOR_VERSION
+from apiAnalysis.rule.legacy_scoring import (
+    classify_endpoint_with_score,
+    score_weak_relation,
+)
 
 query_api_keywords = [
     "get", "list", "query", "search", "detail", "info", "fetch", "count", "page", "find",
@@ -32,20 +33,7 @@ auth_api_keywords = [
     "passwd", "otp", "mfa", "refresh",
 ]
 
-
-def analsis(resp):
-    if resp.status_code != 200:
-        return False
-    elif any(v.encode() in resp.content for v in error):
-        return False
-    else:
-        return True
-
-
 class analysis():
-    _SUCCESS_STATUS = {200, 201, 202, 204}
-    _READONLY_METHODS = {"GET", "HEAD", "OPTIONS"}
-    _READONLY_ACTIONS = {"Q_Path", "Download_Path"}
     _LOW_INFO_VALUES = {"", "0", "1", "true", "false", "null", "none", "unknown"}
     _PARAM_BLACKLIST = {
         "page", "size", "offset", "sort", "order", "lang", "locale",
@@ -161,60 +149,80 @@ class analysis():
                 api_type = "None"
                 return api_type, verify
 
-    def parameter_data(self, rawdata):
-        parameter_archive()
+    def parameter_archive(self, *, pathids, account_id=None, project_id="", env_id=""):
+        """Archive imported parameter facts without sending network requests.
 
-    def parameter_archive(self, account_id=None):
-        sheer_parameter, paths = sheer_parameters()
-        yield_obj = deal_raw(sheer_parameter)
-        param_archive = {}
-        try:
-            ws = Workspace.objects(status=Workspace.STATUS_START, cname=cname)
-            for k, v, d in yield_obj:
-                if k in sheer_parameter:
-                    parameter_archive_data = parameter_archive(parameter=k, parameterid=v,
-                                                               req_pathid=paths[k]["req_pathid"],
-                                                               res_pathid=paths[k]["res_pathid"],
-                                                               req_value=list(set(paths[k]["req_value"])),
-                                                               res_value=list(set(paths[k]["res_value"])),
-                                                               account_id=account_id)
-                    parameter_archive_data.save()
-                else:
-                    if any(d["parameterid"] in value_list for key, value_list in param_archive.items()
-                           if d["parameter"] in key):
-                        break
-                    parameterid_archive = []
-                    for i in paths[d["parameter"]]["req_pathid"]:
-                        req_data = parameter_data.objects(raw_data__ptah_id=i).first()
-                        value = req_data.req_value[:3] if 3 < len(req_data.req_value) else req_data.req_value
-                        responds = []
-                        parameter_value = []
-                        for j in value:
-                            update_kv = {d["parameter"]: j}
-                            v.update_param(update_kv)
-                            resp = deal_request(k, v, account, ws, get_roles(ws))
-                            if analsis(resp):
-                                parameter_value.append(j)
-                            else:
-                                paths[d["parameter"]]["req_pathid"].remove(i)
-                            #responds.append(resp)
-                        parameterid_archive.append(req_data.parameterid)
-                    if d["parameter"] not in param_archive:
-                        param_archive[d["parameter"]] = list(set(parameterid_archive))
-                    else:
-                        param_archive[d["parameter"]+f"_{d['parameterid']}"] = list(set(parameterid_archive))
-                        paths[d["parameter"] + f"_{d['parameterid']}"]["req_pathid"] = paths[d["parameter"]]["req_pathid"]
-                        paths[d["parameter"] + f"_{d['parameterid']}"]["req_pathid"] = paths[d["parameter"]]["res_pathid"]
-                    for key, value in param_archive.items():
-                        parameter_archive_data = parameter_archive(parameter=key, parameterid=value,
-                                                                   req_pathid=paths[key]["req_pathid"],
-                                                                   res_pathid=paths[key]["res_pathid"],
-                                                                   req_value=list(set(parameter_value)),
-                                                                   res_value=list(set(paths[key]["res_value"])),
-                                                                   account_id=account_id)
-                        parameter_archive_data.save()
-        except Exception as e:
-            logger.exception("parameter_archive failed: %s", e)
+        The old implementation attempted synchronous replay while importing.
+        Import is now a deterministic data transformation, strictly bounded to
+        the path ids returned by the current import contract.
+        """
+        selected = {int(value) for value in (pathids or [])}
+        if not selected:
+            raise ValueError("parameter archive requires non-empty pathids")
+
+        def normalized_pathids(values):
+            result = set()
+            pending = list(values or [])
+            while pending:
+                value = pending.pop()
+                if isinstance(value, (list, tuple, set)):
+                    pending.extend(value)
+                    continue
+                try:
+                    result.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        def unique_values(values):
+            result = []
+            seen = set()
+            for value in values:
+                try:
+                    key = json.dumps(value, ensure_ascii=False, sort_keys=True)
+                except TypeError:
+                    key = str(value)
+                if key not in seen:
+                    seen.add(key)
+                    result.append(value)
+            return result
+
+        grouped = {}
+        for item in parameter_data.objects():
+            req_pathids = normalized_pathids(item.req_pathid)
+            res_pathids = normalized_pathids(item.res_pathid)
+            if not selected.intersection(req_pathids | res_pathids):
+                continue
+            key = self._leaf_param_name(item.parameter)
+            target = grouped.setdefault(key, {
+                "parameterids": set(), "req_pathids": set(), "res_pathids": set(),
+                "req_values": [], "res_values": [],
+            })
+            target["parameterids"].add(int(item.parameterid))
+            target["req_pathids"].update(req_pathids.intersection(selected))
+            target["res_pathids"].update(res_pathids.intersection(selected))
+            target["req_values"].extend(list(item.req_value or []))
+            target["res_values"].extend(list(item.res_value or []))
+
+        archived = 0
+        identity = {
+            "account_id": str(account_id or ""),
+            "project_id": str(project_id or ""),
+            "env_id": str(env_id or ""),
+        }
+        for name, values in grouped.items():
+            record = parameter_archive.objects(parameter=name, **identity).first()
+            if record is None:
+                record = parameter_archive(parameter=name, **identity)
+            record.parameterid = sorted(values["parameterids"])
+            record.req_pathid = sorted(values["req_pathids"])
+            record.res_pathid = sorted(values["res_pathids"])
+            record.req_value = unique_values(values["req_values"])
+            record.res_value = unique_values(values["res_values"])
+            record.modificator = "offline_import_batch_v1"
+            record.save()
+            archived += 1
+        return archived
 
     @staticmethod
     def _normalize_param_name(name):
@@ -231,6 +239,58 @@ class analysis():
         if leaf.isdigit() and len(parts) > 1:
             return ".".join(parts[-2:])
         return leaf
+
+    def _parameter_occurrence(self, pathid, direction, leaf_name, project_id=""):
+        model = req_data if direction == "request" else res_data
+        normalized = str(leaf_name or "").lower().replace("-", "_")
+        compact = "".join(char for char in normalized if char.isalnum())
+        endpoint_query = {"ptah_id": pathid}
+        if project_id:
+            endpoint_query["project_id"] = str(project_id)
+        endpoint = raw_data.objects(**endpoint_query).first()
+        if not endpoint and project_id:
+            endpoint = raw_data.objects(ptah_id=pathid).first()
+        if not endpoint:
+            return None
+        occurrences = model.objects(raw_data=endpoint)
+        item = occurrences.filter(canonical_name=normalized).first()
+        if item:
+            return item
+        for candidate in occurrences:
+            leaf = self._leaf_param_name(candidate.parameter).lower().replace("-", "_")
+            if leaf == normalized or (
+                    compact and "".join(char for char in leaf if char.isalnum()) == compact):
+                return candidate
+        return None
+
+    def _bind_relation_occurrences(self, relation, leaf_name, req_pathid, res_pathid):
+        source = self._parameter_occurrence(
+            res_pathid, "response", leaf_name, relation.project_id,
+        )
+        target = self._parameter_occurrence(
+            req_pathid, "request", leaf_name, relation.project_id,
+        )
+        if source:
+            relation.source_parameter = source.parameter or leaf_name
+            relation.source_position = source.position or "body"
+            relation.source_locator = dict(source.locator or {})
+        if target:
+            relation.target_parameter = target.parameter or leaf_name
+            relation.target_position = target.position or "body"
+            relation.target_locator = dict(target.locator or {})
+        endpoint = target.raw_data if target and target.raw_data else (source.raw_data if source else None)
+        if endpoint:
+            relation.project_id = endpoint.project_id or relation.project_id
+            relation.env_id = endpoint.env_id or relation.env_id
+        relation.locator_version = LOCATOR_VERSION
+        relation.location_status = "resolved" if source and target else "unresolved"
+        missing = []
+        if not source:
+            missing.append("source")
+        if not target:
+            missing.append("target")
+        relation.location_note = "" if not missing else "{} parameter occurrence is unavailable".format("/".join(missing))
+        return relation
 
     @staticmethod
     def _parse_name_list(raw_names):
@@ -300,100 +360,16 @@ class analysis():
         return normalized
 
     def _score_weak_relation(self, leaf_name, overlap_count, req_count, res_count, used_name_fallback=False):
-        score = 0.0
-        reason_codes = []
-        if overlap_count > 0:
-            score += min(50.0, overlap_count * 10.0)
-            reason_codes.append("OVERLAP_COUNT")
-        max_count = max(req_count, res_count, 1)
-        overlap_ratio = self._safe_ratio(overlap_count, max_count)
-        if overlap_ratio >= 0.6:
-            score += 25.0
-            reason_codes.append("OVERLAP_RATIO_HIGH")
-        elif overlap_ratio >= 0.3:
-            score += 12.0
-            reason_codes.append("OVERLAP_RATIO_MID")
-        if leaf_name and leaf_name.lower() not in self._PARAM_BLACKLIST:
-            score += 15.0
-            reason_codes.append("LEAF_NOT_BLACKLIST")
-        if used_name_fallback:
-            score += 8.0
-            reason_codes.append("NAME_FALLBACK")
-        return round(min(100.0, score), 2), reason_codes
+        return score_weak_relation(
+            leaf_name,
+            overlap_count,
+            req_count,
+            res_count,
+            used_name_fallback=used_name_fallback,
+        )
 
     def classify_with_score(self, rawdata):
-        method = (rawdata.method or "").upper()
-        path = (rawdata.path or "").lower()
-        text = "{}{}".format(method, path)
-        score = {
-            "Auth_Path": 0,
-            "Download_Path": 0,
-            "Upload_Path": 0,
-            "D_Path": 0,
-            "M_Path": 0,
-            "C_Path": 0,
-            "Q_Path": 0,
-        }
-        reason = []
-
-        if method in {"GET", "HEAD", "OPTIONS"}:
-            score["Q_Path"] += 35
-            reason.append("METHOD_READONLY")
-        elif method == "DELETE":
-            score["D_Path"] += 35
-            reason.append("METHOD_DELETE")
-        elif method in {"PUT", "PATCH"}:
-            score["M_Path"] += 35
-            reason.append("METHOD_MODIFY")
-        elif method == "POST":
-            score["C_Path"] += 25
-            score["M_Path"] += 10
-            reason.append("METHOD_POST")
-
-        def hit(words):
-            return any(k in text for k in words)
-
-        if hit(auth_api_keywords):
-            score["Auth_Path"] += 60
-            reason.append("KW_AUTH")
-        if hit(download_api_keywords):
-            score["Download_Path"] += 55
-            reason.append("KW_DOWNLOAD")
-        if hit(upload_api_keywords):
-            score["Upload_Path"] += 55
-            reason.append("KW_UPLOAD")
-        if hit(delete_api_keywords):
-            score["D_Path"] += 45
-            reason.append("KW_DELETE")
-        if hit(modify_api_keywords):
-            score["M_Path"] += 45
-            reason.append("KW_MODIFY")
-        if hit(add_api_keywords):
-            score["C_Path"] += 45
-            reason.append("KW_CREATE")
-        if hit(query_api_keywords):
-            score["Q_Path"] += 35
-            reason.append("KW_QUERY")
-
-        has_body = bool(rawdata.raw_req and any(i not in [None, b"", ""] for i in rawdata.raw_req))
-        if has_body:
-            score["C_Path"] += 10
-            score["M_Path"] += 10
-            reason.append("HAS_REQUEST_BODY")
-
-        statuses = set(rawdata.response_status_code or [])
-        if 204 in statuses or 201 in statuses:
-            score["C_Path"] += 8
-            score["M_Path"] += 8
-            score["D_Path"] += 6
-            reason.append("STATUS_201_204")
-
-        best_action = max(score, key=score.get)
-        confidence = int(score[best_action])
-        if confidence < 40:
-            best_action = "Q_Path"
-            reason.append("LOW_CONF_FALLBACK_Q")
-        return best_action, min(confidence, 100), reason[:8]
+        return classify_endpoint_with_score(rawdata)
 
     def infer_weak_relations(self,
                              enable_value_intersection=True,
@@ -402,9 +378,14 @@ class analysis():
                              fallback_parameter_names=None,
                              enable_same_path_not_equal=True,
                              min_relation_score=60.0,
-                             top_candidate_limit=10):
+                             top_candidate_limit=10,
+                             pathids=None):
         """
         Infer weak relations between request/response paths with configurable rules.
+
+        ``enable_same_path_not_equal`` is retained as a compatibility flag for
+        counting legacy empty-intersection cases.  Empty intersections are now
+        reported as insufficient evidence and never create/update a relation.
         """
         try:
             min_overlap_count = int(min_overlap_count)
@@ -413,10 +394,12 @@ class analysis():
         if min_overlap_count < 1:
             min_overlap_count = 1
         fallback_names = {self._leaf_param_name(i).lower() for i in self._parse_name_list(fallback_parameter_names)}
+        selected_pathids = None if pathids is None else {int(item) for item in pathids}
         grouped = {}
         candidate_rows = []
         accepted = 0
         skipped_low_score = 0
+        insufficient_evidence_pairs = 0
 
         for param in parameter_data.objects():
             if not param.parameter:
@@ -443,6 +426,8 @@ class analysis():
             for req_pid in group["req_pids"]:
                 for res_pid in group["res_pids"]:
                     if req_pid == res_pid:
+                        continue
+                    if selected_pathids is not None and req_pid not in selected_pathids and res_pid not in selected_pathids:
                         continue
                     used_name_fallback = False
                     if enable_value_intersection and len(overlap) >= min_overlap_count:
@@ -487,6 +472,7 @@ class analysis():
                                                           score=rel_score,
                                                           reason_codes=reason_codes,
                                                           evidence=evidence)
+                        self._bind_relation_occurrences(relation_obj, leaf_name, req_pid, res_pid)
                         relation_obj.save()
                     else:
                         # Keep highest score and reasons for explainability.
@@ -497,51 +483,21 @@ class analysis():
                         if reason_codes:
                             relation_obj.reason_codes = reason_codes
                             changed = True
+                        self._bind_relation_occurrences(relation_obj, leaf_name, req_pid, res_pid)
+                        changed = True
                         if changed:
                             relation_obj.save()
                     accepted += 1
-        if not enable_same_path_not_equal:
-            summary = self._build_relation_summary(
-                candidate_rows=candidate_rows,
-                accepted=accepted,
-                skipped_low_score=skipped_low_score,
-                min_relation_score=min_relation_score,
-                top_candidate_limit=top_candidate_limit,
-            )
-            logger.info(
-                "infer_weak_relations summary: total=%s accepted=%s skipped_low_score=%s min_score=%s",
-                summary["total_candidates"],
-                summary["accepted_candidates"],
-                summary["skipped_low_score"],
-                summary["min_relation_score"],
-            )
-            return summary
-
-        for leaf_name, group in grouped.items():
-            req_values = group["req_values"]
-            res_values = group["res_values"]
-            if not req_values or not res_values:
-                continue
-            if req_values.intersection(res_values):
-                continue
-            for req_pid in group["req_pids"]:
-                for res_pid in group["res_pids"]:
-                    if req_pid != res_pid:
-                        continue
-                    relation = parameter_relation.objects(parameter=leaf_name,
-                                                          req_pathid=req_pid,
-                                                          res_pathid=res_pid).first()
-                    if relation:
-                        continue
-                    relation = parameter_relation(parameter=leaf_name,
-                                                  req_pathid=req_pid,
-                                                  res_pathid=res_pid,
-                                                  rule="no_intersection_same_path",
-                                                  relation="not_equal",
-                                                  score=30.0,
-                                                  reason_codes=["NO_INTERSECTION_SAME_PATH"],
-                                                  evidence=[])
-                    relation.save()
+        if enable_same_path_not_equal:
+            for _, group in grouped.items():
+                req_values = group["req_values"]
+                res_values = group["res_values"]
+                if not req_values or not res_values or req_values.intersection(res_values):
+                    continue
+                same_pathids = set(group["req_pids"]).intersection(group["res_pids"])
+                if selected_pathids is not None:
+                    same_pathids.intersection_update(selected_pathids)
+                insufficient_evidence_pairs += len(same_pathids)
 
         summary = self._build_relation_summary(
             candidate_rows=candidate_rows,
@@ -549,18 +505,22 @@ class analysis():
             skipped_low_score=skipped_low_score,
             min_relation_score=min_relation_score,
             top_candidate_limit=top_candidate_limit,
+            insufficient_evidence_pairs=insufficient_evidence_pairs,
         )
         logger.info(
-            "infer_weak_relations summary: total=%s accepted=%s skipped_low_score=%s min_score=%s",
+            "infer_weak_relations summary: total=%s accepted=%s skipped_low_score=%s "
+            "insufficient_evidence=%s min_score=%s",
             summary["total_candidates"],
             summary["accepted_candidates"],
             summary["skipped_low_score"],
+            summary["insufficient_evidence_pairs"],
             summary["min_relation_score"],
         )
         return summary
 
     @staticmethod
-    def _build_relation_summary(candidate_rows, accepted, skipped_low_score, min_relation_score, top_candidate_limit):
+    def _build_relation_summary(candidate_rows, accepted, skipped_low_score, min_relation_score,
+                                top_candidate_limit, insufficient_evidence_pairs=0):
         candidates = sorted(candidate_rows, key=lambda x: (x.get("score") or 0), reverse=True)
         limit = int(top_candidate_limit or 10)
         if limit < 1:
@@ -570,303 +530,25 @@ class analysis():
             "total_candidates": len(candidate_rows),
             "accepted_candidates": int(accepted),
             "skipped_low_score": int(skipped_low_score),
+            "insufficient_evidence_pairs": int(insufficient_evidence_pairs),
             "min_relation_score": float(min_relation_score),
             "top_candidates": top_candidates,
         }
 
-    def build_request_compose(self):
-        for data in raw_data.objects:
+    def build_request_compose(self, pathids=None):
+        query = {}
+        if pathids is not None:
+            query["ptah_id__in"] = list(pathids)
+        for data in raw_data.objects(**query):
             build_compose_record(data.ptah_id)
 
-    def verify_weak_relations(self):
-        """
-        Heuristic verification using existing path metadata.
-        """
-        for relation in parameter_relation.objects(verified=False):
-            req = raw_data.objects(ptah_id=relation.req_pathid).first()
-            res = raw_data.objects(ptah_id=relation.res_pathid).first()
-            if not req or not res:
-                continue
-            if 200 in (req.response_status_code or []) and 200 in (res.response_status_code or []):
-                relation.verified = True
-                relation.save()
-
-    def verify_weak_relations_real(self, limit=None, min_score=None):
-        """
-        Real replay verification using positive/negative/baseline samples.
-        """
-        return self.verify_weak_relations_real_with_switch(limit=limit, min_score=min_score)
-
-    def verify_weak_relations_real_with_switch(self,
-                                               allowed_actions=None,
-                                               allow_write_actions=False,
-                                               limit=None,
-                                               min_score=None):
-        """
-        Real replay verification with classification-based switch.
-        Default: only readonly actions/methods.
-        """
-        engine = PrivilegeEngine()
-        allowed = set(self._parse_name_list(allowed_actions))
-        if not allowed:
-            allowed = {a.lower() for a in self._READONLY_ACTIONS}
-        try:
-            min_score_val = float(min_score) if min_score is not None else 60.0
-        except Exception:
-            min_score_val = 60.0
-        try:
-            limit_val = int(limit) if limit is not None else 200
-        except Exception:
-            limit_val = 200
-        if limit_val <= 0:
-            limit_val = 200
-        if limit_val > 5000:
-            limit_val = 5000
-
-        qs = parameter_relation.objects(relation="weak", verified=False, score__gte=min_score_val).order_by("-score")
-        processed = 0
-        verified_count = 0
-        skipped = 0
-
-        for relation in qs:
-            if processed >= limit_val:
-                break
-            processed += 1
-            req_data_obj = raw_data.objects(ptah_id=relation.req_pathid).first()
-            res_data_obj = raw_data.objects(ptah_id=relation.res_pathid).first()
-            if not req_data_obj or not res_data_obj:
-                skipped += 1
-                continue
-            if not self._allow_replay_pair(req_data_obj, res_data_obj, allowed, allow_write_actions):
-                skipped += 1
-                continue
-            ws = engine._find_workspace(req_data_obj) or engine._find_workspace(res_data_obj)
-            if not ws:
-                skipped += 1
-                continue
-            cfg = engine._get_config(ws, "horizontal")
-            if not cfg:
-                skipped += 1
-                continue
-            sample_values = self._prepare_replay_values(relation.evidence)
-            if not sample_values:
-                skipped += 1
-                continue
-
-            total = 0
-            passed = 0
-            for idx, value in enumerate(sample_values):
-                total += 1
-                req_base = build_request_payload(relation.req_pathid, account_id=cfg.account_id)
-                res_base = build_request_payload(relation.res_pathid, account_id=cfg.account_id)
-                if not req_base or not res_base:
-                    continue
-
-                req_pos = copy.deepcopy(req_base)
-                res_pos = copy.deepcopy(res_base)
-                self._apply_param_value(relation.parameter, value, req_pos, relation.req_pathid)
-                self._apply_param_value(relation.parameter, value, res_pos, relation.res_pathid)
-                req_pos_resp = engine.execute_payload(req_pos, ws, cfg)
-                res_pos_resp = engine.execute_payload(res_pos, ws, cfg)
-
-                bad_value = self._make_negative_value(value, idx)
-                req_neg = copy.deepcopy(req_base)
-                res_neg = copy.deepcopy(res_base)
-                self._apply_param_value(relation.parameter, bad_value, req_neg, relation.req_pathid)
-                self._apply_param_value(relation.parameter, bad_value, res_neg, relation.res_pathid)
-                req_neg_resp = engine.execute_payload(req_neg, ws, cfg)
-                res_neg_resp = engine.execute_payload(res_neg, ws, cfg)
-
-                req_base_resp = engine.execute_payload(req_base, ws, cfg)
-                res_base_resp = engine.execute_payload(res_base, ws, cfg)
-
-                if self._judge_replay_sample(
-                    value=value,
-                    bad_value=bad_value,
-                    req_pos_resp=req_pos_resp,
-                    res_pos_resp=res_pos_resp,
-                    req_neg_resp=req_neg_resp,
-                    res_neg_resp=res_neg_resp,
-                    req_base_resp=req_base_resp,
-                    res_base_resp=res_base_resp,
-                ):
-                    passed += 1
-
-            if total <= 0:
-                skipped += 1
-                continue
-            if passed / float(total) >= 0.6:
-                relation.verified = True
-                relation.modificator = "real_replay_vote_{}/{}".format(passed, total)
-                relation.save()
-                verified_count += 1
-
-        summary = {
-            "processed": processed,
-            "verified": verified_count,
-            "skipped": skipped,
-            "limit": limit_val,
-            "min_score": min_score_val,
-        }
-        logger.info(
-            "verify_weak_relations_real summary: processed=%s verified=%s skipped=%s limit=%s min_score=%s",
-            processed, verified_count, skipped, limit_val, min_score_val
-        )
-        return summary
-
-    def _allow_replay_pair(self, req_data_obj, res_data_obj, allowed_actions, allow_write_actions):
-        return (
-            self._allow_replay_endpoint(req_data_obj, allowed_actions, allow_write_actions)
-            and self._allow_replay_endpoint(res_data_obj, allowed_actions, allow_write_actions)
-        )
-
-    def _allow_replay_endpoint(self, data_obj, allowed_actions, allow_write_actions):
-        method = (data_obj.method or "").upper()
-        action = (data_obj.action or "").lower()
-        if allow_write_actions:
-            return True
-        if method not in self._READONLY_METHODS:
-            return False
-        if allowed_actions and action not in allowed_actions:
-            return False
-        return True
-
-    def _prepare_replay_values(self, evidence, max_samples=5):
-        values = []
-        seen = set()
-        for raw in evidence or []:
-            value = self._decode_evidence_value(raw)
-            if value is None:
-                continue
-            key = self._normalize_value_key(value)
-            if key in seen:
-                continue
-            seen.add(key)
-            values.append(value)
-            if len(values) >= max_samples:
-                break
-        return values
-
-    def _decode_evidence_value(self, value):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return None
-            try:
-                return json.loads(text)
-            except Exception:
-                return text
-        return value
-
-    def _normalize_value_key(self, value):
-        try:
-            return json.dumps(value, ensure_ascii=False, sort_keys=True)
-        except Exception:
-            return str(value)
-
-    def _make_negative_value(self, value, idx):
-        if isinstance(value, bool):
-            return not value
-        if isinstance(value, int):
-            return value + 100000 + idx
-        if isinstance(value, float):
-            return value + 100000.0 + idx
-        if isinstance(value, str):
-            return "__invalid__{}__{}".format(value, idx)
-        return "__invalid__{}".format(idx)
-
-    def _status_ok(self, resp):
-        code = None
-        if isinstance(resp, dict):
-            code = resp.get("status_code")
-        return code in self._SUCCESS_STATUS
-
-    def _text_contains_value(self, text, value):
-        if not text:
-            return False
-        value_text = str(value)
-        if value_text and value_text in str(text):
-            return True
-        try:
-            return json.dumps(value, ensure_ascii=False) in str(text)
-        except Exception:
-            return False
-
-    def _judge_replay_sample(self,
-                             value,
-                             bad_value,
-                             req_pos_resp,
-                             res_pos_resp,
-                             req_neg_resp,
-                             res_neg_resp,
-                             req_base_resp,
-                             res_base_resp):
-        pos_ok = self._status_ok(req_pos_resp) and self._status_ok(res_pos_resp)
-        if not pos_ok:
-            return False
-
-        neg_ok = self._status_ok(req_neg_resp) and self._status_ok(res_neg_resp)
-        base_ok = self._status_ok(req_base_resp) and self._status_ok(res_base_resp)
-
-        pos_text_req = (req_pos_resp or {}).get("text", "")
-        pos_text_res = (res_pos_resp or {}).get("text", "")
-        neg_text_req = (req_neg_resp or {}).get("text", "")
-        neg_text_res = (res_neg_resp or {}).get("text", "")
-
-        pos_has = self._text_contains_value(pos_text_req, value) or self._text_contains_value(pos_text_res, value)
-        neg_has = self._text_contains_value(neg_text_req, bad_value) or self._text_contains_value(neg_text_res,
-                                                                                                    bad_value)
-
-        score = 0
-        if pos_ok:
-            score += 1
-        if pos_has:
-            score += 1
-        if not neg_ok:
-            score += 1
-        if not neg_has:
-            score += 1
-        if base_ok:
-            score += 1
-
-        return score >= 3
-
-    def _apply_param_value(self, parameter, value, payload, pathid):
-        req_items = req_data.objects(raw_data__ptah_id=pathid, parameter=parameter)
-        if not req_items:
-            leaf_name = self._leaf_param_name(parameter)
-            req_items = [
-                item for item in req_data.objects(raw_data__ptah_id=pathid)
-                if self._leaf_param_name(item.parameter) == leaf_name
-            ]
-        for item in req_items:
-            pos = item.position or "body"
-            target_name = item.parameter or parameter
-            if pos == "query":
-                payload.setdefault("query", {})[target_name] = value
-            elif pos == "header":
-                payload.setdefault("headers", {})[target_name] = value
-            elif pos == "path":
-                payload.setdefault("path_params", {})[target_name] = value
-            else:
-                payload.setdefault("body", {})[target_name] = value
-
-    def prepare_privilege_tasks(self):
-        PrivilegeEngine().prepare_tasks()
-
-    def execute_privilege_tasks(self, limit: int = 20):
-        PrivilegeEngine().execute_pending(limit=limit)
-
-    def execute_ai_stub(self, limit: int = 20):
-        PrivilegeEngine().execute_ai_stub(limit=limit)
-
-    def execute_ai_http(self, limit: int = 20, url: str = None, api_key: str = None):
-        PrivilegeEngine().execute_ai_http(limit=limit, url=url, api_key=api_key)
-
-    def classify_raw_data(self):
-        for data in raw_data.objects:
+    def classify_raw_data(self, raw_ids=None, pathids=None):
+        query = {}
+        if raw_ids is not None:
+            query["pk__in"] = [ObjectId(str(item)) for item in raw_ids]
+        if pathids is not None:
+            query["ptah_id__in"] = list(pathids)
+        for data in raw_data.objects(**query):
             if data.action:
                 continue
             action, confidence, reason_codes = self.classify_with_score(data)

@@ -1,0 +1,242 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body parameter-assets">
+    <style>
+        .parameter-assets { color:#172033; background:#f5f7fa; min-height:100%; }
+        .panel,.parameter-card { background:#fff; border:1px solid #dfe4ea; margin-bottom:12px; }
+        .panel { padding:14px 16px; }
+        .title { font-size:20px; font-weight:650; color:#101828; }
+        .muted { color:#667085; line-height:1.6; }
+        .metrics { display:grid; grid-template-columns:repeat(6,minmax(110px,1fr)); gap:8px; margin-top:12px; }
+        .metric { border:1px solid #e4e7ec; background:#f8fafc; padding:9px 11px; }
+        .metric span { display:block; color:#667085; }
+        .metric strong { display:block; color:#101828; font-size:19px; margin-top:2px; }
+        .toolbar,.card-head,.head-main,.card-actions,.pager { display:flex; align-items:center; gap:9px; }
+        .toolbar,.card-head,.pager { justify-content:space-between; }
+        .toolbar form,.card-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        .filter-panel { align-items:flex-start; }
+        .filter-panel > form:first-child { flex:1; }
+        .batch-grid { display:grid; grid-template-columns:repeat(4,minmax(125px,1fr)) 1.1fr 1.4fr 1.5fr auto auto; gap:7px; align-items:center; margin-top:10px; }
+        .parameter-card { overflow:hidden; }
+        .card-head { padding:12px 14px; background:#fcfcfd; border-bottom:1px solid #e4e7ec; }
+        .head-main { align-items:flex-start; }
+        .param-name { font-size:18px; font-weight:650; color:#101828; }
+        .meaning { color:#344054; margin-top:3px; }
+        .badge { display:inline-block; padding:2px 7px; border:1px solid #d0d5dd; background:#f8fafc; color:#344054; margin:2px 4px 2px 0; line-height:20px; }
+        .badge.good { border-color:#98d7bd; background:#ecfdf3; color:#027a48; }
+        .badge.warn { border-color:#ffd18a; background:#fffaeb; color:#b54708; }
+        .badge.bad { border-color:#f7a8a8; background:#fff1f3; color:#b42318; }
+        .badge.info { border-color:#84caff; background:#eff8ff; color:#175cd3; }
+        .overview { display:grid; grid-template-columns:1fr 1fr 1.2fr; }
+        .overview > section { padding:12px 14px; border-right:1px solid #e4e7ec; }
+        .overview > section:last-child { border-right:0; }
+        .section-label { color:#475467; font-weight:600; margin-bottom:6px; }
+        .drawer { border-top:1px solid #e4e7ec; margin:0; padding:0; }
+        .drawer > summary { cursor:pointer; padding:11px 14px; color:#006d63; font-weight:600; background:#fcfcfd; }
+        .drawer[open] > summary { border-bottom:1px solid #e4e7ec; }
+        .drawer-body { padding:13px 14px; }
+        .identity-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+        .endpoint-detail { border:1px solid #dfe4ea; margin-top:9px; background:#fff; }
+        .endpoint-detail > summary { cursor:pointer; padding:10px 12px; background:#f8fafc; color:#101828; }
+        .method { display:inline-block; min-width:52px; text-align:center; color:#fff; background:#475467; padding:2px 7px; margin-right:7px; font-weight:650; }
+        .method.GET { background:#1677ff; }.method.POST { background:#12a150; }.method.PUT,.method.PATCH { background:#d97706; }.method.DELETE { background:#d92d20; }
+        .endpoint-body { padding:12px; }
+        .endpoint-meta { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:9px; }
+        .schema-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .schema-table { width:100%; border-collapse:collapse; font-size:12px; }
+        .schema-table th,.schema-table td { border:1px solid #e4e7ec; text-align:left; padding:6px 7px; vertical-align:top; }
+        .schema-table th { background:#f8fafc; color:#475467; }
+        .schema-table tr.highlight td { background:#ecfdf3; }
+        .sample { border:1px solid #e4e7ec; margin-top:10px; }
+        .sample-head { padding:8px 10px; background:#f8fafc; border-bottom:1px solid #e4e7ec; }
+        .sample-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:9px; }
+        .sample-grid .wide { grid-column:1 / -1; }
+        pre { white-space:pre-wrap; word-break:break-word; max-height:230px; overflow:auto; background:#0f172a; color:#e2e8f0; border:0; padding:9px; margin:4px 0 0; font-family:Consolas,monospace; font-size:12px; }
+        .experience-grid { display:grid; grid-template-columns:repeat(4,minmax(130px,1fr)); gap:8px; }
+        .experience-grid .wide { grid-column:1 / -1; }
+        .experience-grid label { display:block; color:#475467; margin-bottom:3px; }
+        .experience-grid textarea { min-height:64px; }
+        .empty { padding:28px; text-align:center; }
+        @media (max-width:1180px) {
+            .metrics,.batch-grid,.experience-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .overview,.schema-grid,.identity-grid { grid-template-columns:1fr; }
+            .overview > section { border-right:0; border-bottom:1px solid #e4e7ec; }
+        }
+        @media (max-width:720px) {
+            .metrics,.batch-grid,.experience-grid,.sample-grid { grid-template-columns:1fr; }
+            .toolbar,.card-head,.pager { display:block; }
+            .card-actions { margin-top:8px; }
+            .sample-grid .wide,.experience-grid .wide { grid-column:auto; }
+        }
+    </style>
+
+    {% set knowledge_nav_active = 'parameters' %}
+    {% include '_knowledge-nav.html' %}
+
+    {% if saved %}<div class="panel layui-elem-quote layui-quote-nm">保存结果：{{ saved }}</div>{% endif %}
+    {% if refreshed %}<div class="panel layui-elem-quote layui-quote-nm">已从字段实例归并出 {{ refreshed }} 个规范参数。</div>{% endif %}
+
+    <section class="panel">
+        <div class="title">参数资产</div>
+        <div class="muted">默认按“重要程度 70% + 真实使用频率 30%”综合排序；没有流量时只按重要程度，不用文档出现次数冒充使用频率。参数定义、接口证据、脱敏流量样本和人工经验在同一资产详情中闭环，扁平字段路径仅作定位证据。</div>
+        <div class="metrics">
+            <div class="metric"><span>规范参数</span><strong>{{ stats.parameters }}</strong></div>
+            <div class="metric"><span>高优先级</span><strong>{{ stats.high }}</strong></div>
+            <div class="metric"><span>鉴权参数</span><strong>{{ stats.auth }}</strong></div>
+            <div class="metric"><span>身份 / 租户</span><strong>{{ stats.identity }}</strong></div>
+            <div class="metric"><span>已有人工作为</span><strong>{{ stats.reviewed }}</strong></div>
+            <div class="metric"><span>流量已观察</span><strong>{{ stats.observed }}</strong></div>
+        </div>
+    </section>
+
+    <section class="panel toolbar filter-panel">
+        <form action="{{ url_for('web.parameter_priority') }}" method="GET" class="layui-form">
+            <select name="project_id" style="width:260px;">
+                {% for project in projects %}<option value="{{ project.id }}" {% if project_id == project.id %}selected{% endif %}>{{ project.name }}（{{ project.count }} 接口）</option>{% endfor %}
+            </select>
+            <input class="layui-input" style="width:210px;" name="q" value="{{ form.q }}" placeholder="参数、别名或字段路径">
+            <select name="importance" style="width:125px;"><option value="">全部重要度</option><option value="high" {% if filters.importance == 'high' %}selected{% endif %}>高（≥80）</option><option value="medium" {% if filters.importance == 'medium' %}selected{% endif %}>中（55-79）</option><option value="low" {% if filters.importance == 'low' %}selected{% endif %}>低（＜55）</option></select>
+            <select name="usage" style="width:125px;"><option value="">全部频率</option><option value="high" {% if filters.usage == 'high' %}selected{% endif %}>高频</option><option value="active" {% if filters.usage == 'active' %}selected{% endif %}>常用</option><option value="observed" {% if filters.usage == 'observed' %}selected{% endif %}>有真实流量</option><option value="unobserved" {% if filters.usage == 'unobserved' %}selected{% endif %}>未观察</option></select>
+            <select name="role" style="width:135px;"><option value="">全部角色</option>{% for option in role_options %}<option value="{{ option.key }}" {% if filters.role == option.key %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select>
+            <select name="readiness" style="width:125px;"><option value="">全部就绪度</option><option value="ready" {% if filters.readiness == 'ready' %}selected{% endif %}>已就绪</option><option value="partial" {% if filters.readiness == 'partial' %}selected{% endif %}>部分就绪</option><option value="blocked" {% if filters.readiness == 'blocked' %}selected{% endif %}>待处理</option></select>
+            <select name="relation" style="width:125px;"><option value="">全部关系</option><option value="related" {% if filters.relation == 'related' %}selected{% endif %}>已有关系</option><option value="unrelated" {% if filters.relation == 'unrelated' %}selected{% endif %}>尚无关系</option></select>
+            <select name="experience_status" style="width:135px;"><option value="">全部经验状态</option><option value="unreviewed" {% if filters.experience_status == 'unreviewed' %}selected{% endif %}>未处理</option>{% for option in status_options %}<option value="{{ option.key }}" {% if filters.experience_status == option.key %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select>
+            <select name="sort" style="width:145px;"><option value="combined" {% if filters.sort == 'combined' %}selected{% endif %}>综合优先</option><option value="importance" {% if filters.sort == 'importance' %}selected{% endif %}>重要程度</option><option value="usage" {% if filters.sort == 'usage' %}selected{% endif %}>使用频率</option><option value="readiness" {% if filters.sort == 'readiness' %}selected{% endif %}>就绪程度</option><option value="work" {% if filters.sort == 'work' %}selected{% endif %}>机器待办</option><option value="recent" {% if filters.sort == 'recent' %}selected{% endif %}>最近更新</option><option value="name" {% if filters.sort == 'name' %}selected{% endif %}>参数名称</option></select>
+            <select name="limit" style="width:95px;"><option value="20" {% if limit == 20 %}selected{% endif %}>20 条</option><option value="50" {% if limit == 50 %}selected{% endif %}>50 条</option><option value="100" {% if limit == 100 %}selected{% endif %}>100 条</option></select>
+            <button class="layui-btn" type="submit">搜索</button>
+        </form>
+        <form action="{{ url_for('web.parameter_priority') }}" method="POST">
+            <input type="hidden" name="action" value="refresh"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="q" value="{{ form.q }}"><input type="hidden" name="importance" value="{{ filters.importance }}"><input type="hidden" name="usage" value="{{ filters.usage }}"><input type="hidden" name="role" value="{{ filters.role }}"><input type="hidden" name="readiness" value="{{ filters.readiness }}"><input type="hidden" name="relation" value="{{ filters.relation }}"><input type="hidden" name="experience_status" value="{{ filters.experience_status }}"><input type="hidden" name="sort" value="{{ filters.sort }}"><input type="hidden" name="limit" value="{{ limit }}">
+            <button class="layui-btn layui-btn-primary" type="submit">重新归一与评估</button>
+        </form>
+    </section>
+
+    {% if rows %}
+    <form id="batch-priority-form" action="{{ url_for('web.parameter_priority') }}" method="POST">
+        <input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="q" value="{{ form.q }}"><input type="hidden" name="page" value="{{ page }}"><input type="hidden" name="limit" value="{{ limit }}"><input type="hidden" name="importance" value="{{ filters.importance }}"><input type="hidden" name="usage" value="{{ filters.usage }}"><input type="hidden" name="role" value="{{ filters.role }}"><input type="hidden" name="readiness" value="{{ filters.readiness }}"><input type="hidden" name="relation" value="{{ filters.relation }}"><input type="hidden" name="experience_status" value="{{ filters.experience_status }}"><input type="hidden" name="sort" value="{{ filters.sort }}">
+    </form>
+    <details class="panel">
+        <summary style="cursor:pointer;font-weight:600;color:#006d63;">批量归档或合并参数经验</summary>
+        <div class="muted" style="margin-top:7px;">勾选参数后可批量归档；“合并为同一参数”会让别名或语义相同的参数共用一个经验组，但不会丢失原始字段路径证据。</div>
+        <div class="batch-grid">
+            <select name="batch_status" form="batch-priority-form"><option value="">处理状态</option>{% for status in status_options %}<option value="{{ status.key }}">{{ status.label }}</option>{% endfor %}</select>
+            <select name="batch_role" form="batch-priority-form"><option value="">参数角色</option>{% for role in role_options %}<option value="{{ role.key }}">{{ role.label }}</option>{% endfor %}</select>
+            <select name="batch_reuse_policy" form="batch-priority-form"><option value="">复用策略</option>{% for policy in reuse_options %}<option value="{{ policy.key }}">{{ policy.label }}</option>{% endfor %}</select>
+            <select name="batch_chain_policy" form="batch-priority-form"><option value="">链路策略</option>{% for policy in chain_options %}<option value="{{ policy.key }}">{{ policy.label }}</option>{% endfor %}</select>
+            <input class="layui-input" name="batch_group_key" form="batch-priority-form" placeholder="统一参数键，如 client_id">
+            <input class="layui-input" name="batch_business_meaning" form="batch-priority-form" placeholder="统一业务含义">
+            <input class="layui-input" name="batch_note" form="batch-priority-form" placeholder="归并依据 / 批处理说明">
+            <button class="layui-btn layui-btn-primary" type="submit" name="action" value="batch_experience" form="batch-priority-form">批量归档</button>
+            <button class="layui-btn" type="submit" name="action" value="merge_experience" form="batch-priority-form">合并为同一参数</button>
+        </div>
+    </details>
+
+    {% for row in rows %}
+    <article class="parameter-card" id="parameter-{{ loop.index }}">
+        <header class="card-head">
+            <div class="head-main">
+                <input type="checkbox" name="selected_params" value="{{ row.selected_value }}" form="batch-priority-form">
+                <div>
+                    <div class="param-name">{{ row.parameter }}</div>
+                    <div class="meaning">{{ row.meaning_summary }}</div>
+                    {% if row.aliases %}<span class="badge good">别名 {{ row.aliases|length }}</span>{% endif %}
+                    {% if row.raw_paths %}<span class="badge">已规范归并 {{ row.raw_paths|length }} 个字段路径</span>{% endif %}
+                    {% if row.experience %}<span class="badge good">经验组 {{ row.experience.group_key or row.parameter }}</span>{% endif %}
+                </div>
+            </div>
+            <div class="card-actions">
+                <a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_relations', project_id=project_id, parameter=row.parameter) }}">查看关系</a>
+            </div>
+        </header>
+
+        <div class="overview">
+            <section>
+                <div class="section-label">机器排序</div>
+                <span class="badge info">综合 {{ row.composite_score }}</span>
+                <span class="badge {% if row.final_weight >= 80 %}bad{% elif row.final_weight >= 55 %}warn{% else %}good{% endif %}">重要 {{ row.final_weight }}</span>
+                <span class="badge {% if row.usage_score >= 70 %}bad{% elif row.usage_count > 0 %}warn{% else %}good{% endif %}">{{ row.usage_label }} {{ row.usage_score }}</span>
+                <span class="badge {% if row.readiness_score >= 80 %}good{% elif row.readiness_score >= 40 %}warn{% else %}bad{% endif %}">就绪 {{ row.readiness_score }}</span>
+                <span class="badge info">{{ row.final_role_label }}</span>
+                <div class="muted">真实请求命中 {{ row.usage_count }} 次 · 机器待办 {{ row.work_priority }} · {{ row.readiness_status }}</div>
+            </section>
+            <section>
+                <div class="section-label">影响面</div>
+                <span class="badge">文档字段 {{ row.doc_count }}</span><span class="badge">接口 {{ row.endpoint_count }}</span><span class="badge">关系 {{ row.relation_count }}</span>
+                <div class="muted">请求 {{ row.request_doc_count }} · 响应 {{ row.response_doc_count }}</div>
+                {% if row.last_observed_at %}<div class="muted">最近流量：{{ row.last_observed_at }}</div>{% elif row.project_has_traffic %}<div class="muted">该项目有流量，但尚未观察到此参数。</div>{% else %}<div class="muted">项目暂无真实流量，综合分回退为重要度。</div>{% endif %}
+            </section>
+            <section>
+                <div class="section-label">系统下一步</div>
+                <div>{{ row.next_action }}</div>
+                {% if row.readiness_reasons %}<div class="muted">{{ row.readiness_reasons|join('；') }}</div>{% endif %}
+            </section>
+        </div>
+
+        <details class="drawer evidence-drawer" {% if row.focused %}open{% endif %}>
+            <summary>证据与接口数据（按需加载）</summary>
+            <div class="drawer-body evidence-slot" data-evidence-url="{{ url_for('web.parameter_evidence', project_id=project_id, parameter=row.parameter) }}">
+                <div class="muted">展开后加载接口结构与脱敏流量样本，不拖慢参数列表。</div>
+            </div>
+        </details>
+
+        <details class="drawer" {% if row.experience and row.focused %}open{% endif %}>
+            <summary>参数经验（唯一人工编辑入口）</summary>
+            <div class="drawer-body">
+                <form action="{{ url_for('web.parameter_priority') }}" method="POST" class="layui-form experience-grid">
+                    <input type="hidden" name="action" value="quick_feedback"><input type="hidden" name="project_id" value="{{ project_id }}"><input type="hidden" name="parameter" value="{{ row.parameter }}"><input type="hidden" name="parameters" value="{{ row.selected_value }}"><input type="hidden" name="q" value="{{ form.q }}"><input type="hidden" name="page" value="{{ page }}"><input type="hidden" name="limit" value="{{ limit }}"><input type="hidden" name="importance" value="{{ filters.importance }}"><input type="hidden" name="usage" value="{{ filters.usage }}"><input type="hidden" name="role" value="{{ filters.role }}"><input type="hidden" name="readiness" value="{{ filters.readiness }}"><input type="hidden" name="relation" value="{{ filters.relation }}"><input type="hidden" name="experience_status" value="{{ filters.experience_status }}"><input type="hidden" name="sort" value="{{ filters.sort }}">
+                    <div><label>处理状态</label><select name="process_status">{% for status in status_options %}<option value="{{ status.key }}" {% if row.experience and row.experience.process_status == status.key %}selected{% endif %}>{{ status.label }}</option>{% endfor %}</select></div>
+                    <div><label>参数角色</label><select name="manual_role">{% for role in role_options %}<option value="{{ role.key }}" {% if row.final_role == role.key %}selected{% endif %}>{{ role.label }}</option>{% endfor %}</select></div>
+                    <div><label>重要度</label><input class="layui-input" name="manual_weight" value="{{ row.final_weight }}"></div>
+                    <div><label>统一参数键 / 经验组</label><input class="layui-input" name="group_key" value="{% if row.experience %}{{ row.experience.group_key or row.parameter }}{% else %}{{ row.parameter }}{% endif %}"></div>
+                    <div><label>生效范围</label><select name="scope_type">{% for scope in scope_options %}<option value="{{ scope.key }}" {% if row.experience and row.experience.scope_type == scope.key %}selected{% endif %}>{{ scope.label }}</option>{% endfor %}</select></div>
+                    <div><label>范围值</label><input class="layui-input" name="scope_value" value="{% if row.experience %}{{ row.experience.scope_value or '' }}{% endif %}" placeholder="可选 Host / 路径前缀 / 接口组"></div>
+                    <div><label>复用策略</label><select name="reuse_policy">{% for policy in reuse_options %}<option value="{{ policy.key }}" {% if row.experience and row.experience.reuse_policy == policy.key %}selected{% endif %}>{{ policy.label }}</option>{% endfor %}</select></div>
+                    <div><label>链路策略</label><select name="chain_policy">{% for policy in chain_options %}<option value="{{ policy.key }}" {% if row.experience and row.experience.chain_policy == policy.key %}selected{% endif %}>{{ policy.label }}</option>{% endfor %}</select></div>
+                    <div><label>验证策略</label><select name="validation_policy">{% for policy in validation_options %}<option value="{{ policy.key }}" {% if row.experience and row.experience.validation_policy == policy.key %}selected{% endif %}>{{ policy.label }}</option>{% endfor %}</select></div>
+                    <div><label>人工可信度（0-1）</label><input class="layui-input" name="confidence" value="{% if row.experience %}{{ row.experience.confidence or 0 }}{% else %}0{% endif %}"></div>
+                    <div class="wide"><label>业务含义</label><input class="layui-input" name="business_meaning" value="{% if row.experience %}{{ row.experience.business_meaning or '' }}{% endif %}" placeholder="机器证据之外的业务定义"></div>
+                    <div class="wide"><label>人工说明</label><textarea class="layui-textarea" name="manual_note" placeholder="归并依据、适用边界或可能误判点">{% if row.experience %}{{ row.experience.manual_note or '' }}{% elif row.review %}{{ row.review.manual_note or '' }}{% endif %}</textarea></div>
+                    <button class="layui-btn wide" type="submit" {% if not can_manage %}disabled{% endif %}>保存参数经验</button>
+                </form>
+            </div>
+        </details>
+    </article>
+    {% endfor %}
+
+    <section class="panel pager">
+        <div class="muted">第 {{ page + 1 }} 页，共 {{ filtered_count }} 个规范参数；当前 {{ range_start }} - {{ range_end }}</div>
+        <div>{% if has_prev %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_priority', project_id=project_id, q=form.q, importance=filters.importance, usage=filters.usage, role=filters.role, readiness=filters.readiness, relation=filters.relation, experience_status=filters.experience_status, sort=filters.sort, limit=limit, page=page-1) }}">上一页</a>{% endif %} {% if has_next %}<a class="layui-btn layui-btn-primary layui-btn-sm" href="{{ url_for('web.parameter_priority', project_id=project_id, q=form.q, importance=filters.importance, usage=filters.usage, role=filters.role, readiness=filters.readiness, relation=filters.relation, experience_status=filters.experience_status, sort=filters.sort, limit=limit, page=page+1) }}">下一页</a>{% endif %}</div>
+    </section>
+    {% else %}
+    <section class="panel empty muted">当前没有参数资产。请选择项目并执行“重新归一与评估”。</section>
+    {% endif %}
+    <script>
+        (function () {
+            function loadEvidence(drawer) {
+                var slot = drawer.querySelector('.evidence-slot');
+                if (!slot || slot.dataset.loaded === '1' || slot.dataset.loading === '1') return;
+                slot.dataset.loading = '1';
+                slot.innerHTML = '<div class="muted">正在加载接口证据…</div>';
+                fetch(slot.dataset.evidenceUrl, {credentials: 'same-origin'})
+                    .then(function (response) {
+                        if (!response.ok) throw new Error('HTTP ' + response.status);
+                        return response.text();
+                    })
+                    .then(function (html) {
+                        slot.innerHTML = html;
+                        slot.dataset.loaded = '1';
+                    })
+                    .catch(function () {
+                        slot.innerHTML = '<div class="muted">证据加载失败，请刷新页面后重试。</div>';
+                    })
+                    .finally(function () { slot.dataset.loading = '0'; });
+            }
+            document.querySelectorAll('.evidence-drawer').forEach(function (drawer) {
+                drawer.addEventListener('toggle', function () { if (drawer.open) loadEvidence(drawer); });
+                if (drawer.open) loadEvidence(drawer);
+            });
+        }());
+    </script>
+</div>
+{% endblock %}

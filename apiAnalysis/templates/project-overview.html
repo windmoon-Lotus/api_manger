@@ -1,0 +1,152 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="x-body">
+    <div class="layui-row" style="margin-bottom:15px;">
+        <div class="layui-col-xs12">
+            <span class="layui-breadcrumb">
+                <a href="{{ url_for('web.project_list') }}">项目</a>
+                <a><cite>{{ project.name }}</cite></a>
+            </span>
+        </div>
+    </div>
+
+    <div class="layui-row layui-col-space15">
+        <div class="layui-col-md8">
+            <div class="layui-card">
+                <div class="layui-card-header"><strong>{{ project.name }}</strong> <small style="color:#999;">{{ project.project_id }}</small></div>
+                <div class="layui-card-body">
+                    <p>{{ project.description or '暂无描述' }}</p>
+                </div>
+            </div>
+
+            {# ── 流程引导 ── #}
+            <div class="layui-card" style="margin-top:15px;">
+                <div class="layui-card-header">流程状态</div>
+                <div class="layui-card-body">
+                    <div class="layui-timeline" style="padding-left:10px;">
+                        <div class="layui-timeline-item">
+                            <i class="layui-icon layui-timeline-axis" style="color:{% if asset_count > 0 %}#5FB878{% else %}#FFB800{% endif %};">&#xe605;</i>
+                            <div class="layui-timeline-content">
+                                <h3 class="layui-timeline-title">① 接口资产 <span class="layui-badge layui-bg-{% if asset_count > 0 %}green{% else %}orange{% endif %}">{{ asset_count }}</span></h3>
+                                {% if asset_count == 0 %}<p style="color:#FF5722;">→ 先到 <a href="{{ url_for('web.data_source_center') }}">数据源中心</a> 导入数据并绑定到本项目</p>{% endif %}
+                            </div>
+                        </div>
+                        <div class="layui-timeline-item">
+                            <i class="layui-icon layui-timeline-axis" style="color:{% if profiles %}#5FB878{% else %}#FFB800{% endif %};">&#xe605;</i>
+                            <div class="layui-timeline-content">
+                                <h3 class="layui-timeline-title">② 认证配置 <span class="layui-badge layui-bg-{% if profiles %}green{% else %}orange{% endif %}">{{ profiles|length }}</span></h3>
+                                {% if not profiles %}<p style="color:#FF5722;">→ 到 <a href="{{ url_for('web.project_auth_page', project_id=project_id) }}">环境与认证</a> 创建认证方案</p>
+                                {% elif pending_review == 0 and open_findings == 0 %}<p style="color:#999;">认证已配置，可执行测试</p>{% endif %}
+                            </div>
+                        </div>
+                        <div class="layui-timeline-item">
+                            <i class="layui-icon layui-timeline-axis" style="color:{% if recent_runs %}#5FB878{% else %}#ccc{% endif %};">&#xe605;</i>
+                            <div class="layui-timeline-content">
+                                <h3 class="layui-timeline-title">③ 执行测试 <span class="layui-badge layui-bg-{% if recent_runs %}blue{% else %}gray{% endif %}">{{ recent_runs|length }}</span></h3>
+                                {% if profiles and not recent_runs %}<p style="color:#FF5722;">→ 到 <a href="{{ url_for('web.project_tests', project_id=project_id) }}">测试计划</a> 创建并执行</p>{% endif %}
+                            </div>
+                        </div>
+                        <div class="layui-timeline-item">
+                            <i class="layui-icon layui-timeline-axis" style="color:{% if pending_review > 0 %}#FFB800{% elif open_findings > 0 %}#FF5722{% else %}#ccc{% endif %};">&#xe605;</i>
+                            <div class="layui-timeline-content">
+                                <h3 class="layui-timeline-title">④ 复核与漏洞 <span class="layui-badge">{{ pending_review }}</span> 待复核 / <span class="layui-badge layui-bg-red">{{ open_findings }}</span> 漏洞</h3>
+                                {% if pending_review > 0 %}<p style="color:#FFB800;">→ 到 <a href="{{ url_for('web.review_queue', project_id=project_id) }}">复核队列</a> 处理 {{ pending_review }} 条待复核结果</p>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="layui-card" style="margin-top:15px;">
+                <div class="layui-card-header">快捷入口</div>
+                <div class="layui-card-body">
+                    <a href="{{ url_for('web.project_assets', project_id=project_id) }}" class="layui-btn layui-btn-sm">接口资产 ({{ asset_count }})</a>
+                    <a href="{{ url_for('web.project_knowledge_parameters', project_id=project_id) }}" class="layui-btn layui-btn-sm layui-btn-normal">参数资产</a>
+                    <a href="{{ url_for('web.project_knowledge_relations', project_id=project_id) }}" class="layui-btn layui-btn-sm layui-btn-normal">关系验证</a>
+                    <a href="{{ url_for('web.project_knowledge_chains', project_id=project_id) }}" class="layui-btn layui-btn-sm layui-btn-normal">链路编排</a>
+                    <a href="{{ url_for('web.project_tests', project_id=project_id) }}" class="layui-btn layui-btn-sm layui-btn-warm">测试计划</a>
+                    <a href="{{ url_for('web.project_runs', project_id=project_id) }}" class="layui-btn layui-btn-sm">执行记录</a>
+                    <a href="{{ url_for('web.project_findings', project_id=project_id) }}" class="layui-btn layui-btn-sm layui-btn-danger">漏洞 ({{ open_findings }})</a>
+                </div>
+            </div>
+
+            <div class="layui-card" style="margin-top:15px;">
+                <div class="layui-card-header">最近执行</div>
+                <div class="layui-card-body">
+                    <table class="layui-table" lay-size="sm">
+                        <thead><tr><th>名称</th><th>类型</th><th>状态</th><th>开始时间</th></tr></thead>
+                        <tbody>
+                            {% for run in recent_runs %}
+                            <tr>
+                                <td>{{ run.name[:50] }}</td>
+                                <td>{{ run.check_type }}</td>
+                                <td>
+                                    {% if run.status == 'done' %}<span class="layui-badge layui-bg-green">done</span>
+                                    {% elif run.status == 'running' %}<span class="layui-badge layui-bg-blue">running</span>
+                                    {% elif run.status == 'paused' %}<span class="layui-badge layui-bg-orange">paused</span>
+                                    {% elif run.status in ('failed','cancelled') %}<span class="layui-badge">{{ run.status }}</span>
+                                    {% else %}<span class="layui-badge layui-bg-gray">{{ run.status }}</span>{% endif %}
+                                </td>
+                                <td>{{ run.started_at.strftime('%m-%d %H:%M') if run.started_at else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not recent_runs %}
+                            <tr><td colspan="4" style="text-align:center;color:#999;">暂无执行记录</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md4">
+            <div class="layui-card">
+                <div class="layui-card-header">状态概览</div>
+                <div class="layui-card-body" style="text-align:center;">
+                    <div class="layui-row">
+                        <div class="layui-col-xs6" style="padding:10px;">
+                            <div style="font-size:28px;font-weight:bold;color:#FF5722;">{{ open_findings }}</div>
+                            <small>开放漏洞</small>
+                        </div>
+                        <div class="layui-col-xs6" style="padding:10px;">
+                            <div style="font-size:28px;font-weight:bold;color:#FFB800;">{{ pending_review }}</div>
+                            <small>待复核</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="layui-card" style="margin-top:15px;">
+                <div class="layui-card-header">环境 ({{ environments|length }})</div>
+                <div class="layui-card-body">
+                    {% for env in environments %}
+                    <div style="padding:5px 0;border-bottom:1px solid #f0f0f0;">
+                        <strong>{{ env.env_id }}</strong>
+                        <small style="color:#999;">{{ env.default_host or '' }}</small>
+                        <a href="{{ url_for('web.project_env_auth', project_id=project_id, env_id=env.env_id) }}" class="layui-btn layui-btn-xs" style="float:right;">认证</a>
+                    </div>
+                    {% endfor %}
+                    {% if not environments %}
+                    <p style="color:#999;text-align:center;">暂无环境</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="layui-card" style="margin-top:15px;">
+                <div class="layui-card-header">认证方案 ({{ profiles|length }})</div>
+                <div class="layui-card-body">
+                    {% for profile in profiles %}
+                    <div style="padding:5px 0;border-bottom:1px solid #f0f0f0;">
+                        {{ profile.name }}
+                        {% if profile.is_default %}<span class="layui-badge layui-bg-green">默认</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if not profiles %}
+                    <p style="color:#999;text-align:center;">暂无认证方案</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

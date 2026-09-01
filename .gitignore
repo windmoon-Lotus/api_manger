@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 
 # Local environments
 .env
@@ -13,6 +15,9 @@ __pycache__/
 ../.secrets/
 *.private.json
 *.private.*
+*.local.*
+*.secret.*
+*.credentials.*
 venv/
 .venv/
 env/
@@ -21,16 +26,26 @@ env/
 .idea/
 .vscode/
 .ai/
+.playwright-cli/
 
 # Runtime data and sensitive traffic/spec exports
 *.har
 *.HAR
-runtime_*
+runtime_*.log
+runtime_*.json
+runtime_*.tmp
 *.db
 *.sqlite
 *.sqlite3
 *.log
 apiAnalysis/web/uploads/
+output/
+uploads/
+captures/
+screenshots/
+private_engagements/
+local_engagements/
+local_data/
 apiAnalysis/test_flows
 *.flow
 *.flows
@@ -46,21 +61,29 @@ postman_collection*.json
 security_reports/
 security_profiles/
 schemathesis-report/
+public-data-guard-report.json
 .hypothesis/
 *.junit
 junit-*.xml
 
-# Engagement-specific scripts/docs (target-internal hosts & accounts; kept local, not uploaded)
-tools/*pgy*
-tools/gg_*
-tools/*sunlogin*
-docs/sunlogin_*
+# Engagement-specific material belongs outside the public repository. Existing
+# local target-name patterns live in .git/info/exclude so those names are not
+# published as repository metadata.
+/work/
+/_check_auth.py
+/_extract_pdf.py
+/_scan_endpoints.py
+/_scan_platforms.py
+/tools/host_routes_to_manifest.py
+/apiAnalysis/tool/vulnerability_platform_bridge.py
+/tools/run_platform_verification.py
+/tests/test_vulnerability_platform_bridge.py
+/docs/vulnerability_platform_bridge.md
 
 # OS
 Thumbs.db
 .DS_Store
 
 AGENTS.md
-docs/sunlogin_*
 docs/apifox_api_manager_security_workflow.md
 docs/claude_bughunter_reuse_index.md

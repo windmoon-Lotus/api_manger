@@ -1,0 +1,413 @@
+{% extends "layout.html" %}
+
+{% block body %}
+<div class="x-body auth-page">
+    <style>
+        .auth-page { color:#172033; background:#f5f7fa; min-height:100%; }
+        .hero,.panel { background:#fff; border:1px solid #dfe4ea; padding:16px 18px; margin-bottom:12px; }
+        .hero { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; border-top:3px solid #009688; }
+        .hero h1 { margin:0 0 6px; font-size:22px; font-weight:600; }
+        .muted { color:#667085; line-height:1.65; }
+        .steps { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        .step,.tag { display:inline-block; border:1px solid #cfd6df; background:#f8fafc; padding:4px 8px; color:#344054; }
+        .step strong { color:#007f73; }
+        .panel-title { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+        .panel-title h2 { margin:0; font-size:17px; font-weight:600; }
+        .grid-2 { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+        .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+        .form-grid .wide { grid-column:1 / -1; }
+        .field label { display:block; color:#475467; margin-bottom:4px; }
+        .field textarea { min-height:90px; resize:vertical; }
+        .record { border:1px solid #e4e7ec; padding:10px 12px; margin-top:8px; background:#fcfcfd; }
+        .record.failed { border:2px solid #f04438; background:#fff4f3; }
+        .record.healthy { border-color:#6bc49b; background:#f0fdf4; }
+        .record-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+        .record strong { color:#101828; }
+        .tag-ok { border-color:#98d7bd; background:#ecfdf3; color:#027a48; }
+        .tag-warn { border-color:#ffd18a; background:#fffaeb; color:#b54708; }
+        .tag-off { border-color:#d0d5dd; background:#f2f4f7; color:#667085; }
+        .toolbar { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+        .env-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+        .env-tabs a { border:1px solid #d0d5dd; color:#344054; padding:5px 10px; }
+        .env-tabs a.active { border-color:#009688; background:#eaf7f5; color:#006d63; }
+        .notice { padding:10px 12px; margin-bottom:12px; border:1px solid #98d7bd; background:#ecfdf3; color:#027a48; }
+        .notice.error { border-color:#f7a8a8; background:#fff1f3; color:#b42318; }
+        .empty { padding:18px; border:1px dashed #cfd6df; color:#667085; text-align:center; }
+        .safety-box { border:1px solid #86c7bd; background:#f0fdfa; padding:10px 12px; line-height:1.7; }
+        .diagnostic { border-top:1px dashed #f0a39d; margin-top:9px; padding-top:9px; line-height:1.7; }
+        .warning-box { border:1px solid #f7b955; background:#fffaeb; color:#934b00; padding:10px 12px; margin-bottom:10px; }
+        @media (max-width:1000px) {
+            .grid-2,.form-grid { grid-template-columns:1fr; }
+            .hero { display:block; }
+        }
+    </style>
+
+    {% if notice %}
+        <div class="notice {% if notice.level == 'error' %}error{% endif %}">{{ notice.text }}</div>
+    {% endif %}
+
+    <section class="hero">
+        <div>
+            <h1>项目环境与认证方案</h1>
+            <div class="muted">
+                一个项目可以配置多个环境、多个测试账号和多套认证方案。Token 与 Cookie 不保存在方案或任务中，
+                调度执行时按所选账号自动登录刷新，并且只能发送到当前环境允许的 Host。
+            </div>
+            <div class="steps">
+                <span class="step"><strong>1</strong> 配环境与 Host</span>
+                <span class="step"><strong>2</strong> 添加并绑定测试账号</span>
+                <span class="step"><strong>3</strong> 选择认证域</span>
+                <span class="step"><strong>4</strong> 验证认证并自动恢复任务</span>
+            </div>
+        </div>
+        <a class="layui-btn" href="{{ url_for('web.parameter_relations', project_id=project_id, env_id=env_id) }}">进入关系验证</a>
+    </section>
+
+    <section class="panel">
+        <form method="GET" action="{{ url_for('web.project_auth') }}" class="layui-form">
+            <div class="layui-input-inline" style="width:360px;">
+                <select name="project_id" lay-filter="project-select">
+                    {% for project in projects %}
+                        <option value="{{ project.id }}" {% if project.id == project_id %}selected{% endif %}>
+                            {{ project.name }}{% if project.source_ids %} / Apifox {{ project.source_ids|join(',') }}{% endif %}（{{ project.count }} 接口）
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="layui-btn layui-btn-primary" type="submit">切换项目</button>
+        </form>
+        {% if environments %}
+            <div class="env-tabs">
+                {% for environment in environments %}
+                    <a class="{% if environment.env_id == env_id %}active{% endif %}" href="{{ url_for('web.project_auth', project_id=project_id, env_id=environment.env_id) }}">
+                        {{ environment.name or environment.env_id }}{% if not environment.active %}（停用）{% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </section>
+
+    <div class="grid-2">
+        <section class="panel">
+            <div class="panel-title">
+                <h2>1. 项目环境</h2>
+                {% if selected_environment %}<span class="tag tag-ok">{{ host_names|length }} 个 Host</span>{% endif %}
+            </div>
+            {% if can_manage %}
+            <form method="POST" action="{{ url_for('web.project_auth') }}" class="layui-form form-grid">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="save_environment">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <div class="field">
+                    <label>环境标识</label>
+                    <input class="layui-input" name="env_id" value="{{ selected_environment.env_id if selected_environment else (env_id or 'test') }}" placeholder="test / formal" required>
+                </div>
+                <div class="field">
+                    <label>显示名称</label>
+                    <input class="layui-input" name="name" value="{{ selected_environment.name if selected_environment else '' }}" placeholder="测试环境">
+                </div>
+                <div class="field">
+                    <label>环境类型</label>
+                    <select name="environment_type">
+                        {% set current_env_type = selected_environment.environment_type if selected_environment else 'unknown' %}
+                        <option value="unknown" {% if current_env_type == 'unknown' %}selected{% endif %}>未确认（禁止自动写入）</option>
+                        <option value="test" {% if current_env_type == 'test' %}selected{% endif %}>测试环境</option>
+                        <option value="preprod" {% if current_env_type == 'preprod' %}selected{% endif %}>预发环境</option>
+                        <option value="production" {% if current_env_type == 'production' %}selected{% endif %}>生产环境</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>无需人工批准的请求上限</label>
+                    <input class="layui-input" type="number" min="1" max="1000" name="auto_request_limit" value="{{ selected_environment.auto_request_limit if selected_environment else 3 }}">
+                    <div class="muted">测试/预发可自定义 1–1000；正式或未确认环境始终限制为最多 3 次。</div>
+                </div>
+                <div class="field wide">
+                    <label>默认 Host 或 Base URL</label>
+                    <input class="layui-input" name="default_host" value="{{ selected_environment.default_host if selected_environment else '' }}" placeholder="https://api.example.test" required>
+                </div>
+                <div class="field wide">
+                    <label>允许的 Host / Base URL（每行一个，可带路径前缀）</label>
+                    <textarea class="layui-textarea" name="hosts" placeholder="https://api.example.test&#10;https://admin.example.test/v1">{% if selected_environment %}{% for host in selected_environment.hosts %}{{ host.base_url or host.host }}{% if not loop.last %}
+{% endif %}{% endfor %}{% endif %}</textarea>
+                </div>
+                <label class="wide safety-box">
+                    <input type="checkbox" name="allow_mutation" value="1" {% if selected_environment and selected_environment.allow_mutation %}checked{% endif %}>
+                    允许机器在测试/预发环境中使用测试账号执行 POST、PUT、PATCH、DELETE。请求数遵循上方环境预算；明显的路由/认证拒绝会跨 Host，成功、超时或 5xx 后停止跨 Host，并在预算允许时回读。正式和未确认环境始终硬限制为最多 3 次。
+                </label>
+                <button class="layui-btn wide" type="submit">保存环境</button>
+            </form>
+            {% else %}<div class="empty">当前账号只有查看权限。</div>{% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="panel-title">
+                <h2>2. 项目测试账号</h2>
+                <div><span class="tag">{{ bindings|length }} 个项目绑定</span></div>
+            </div>
+            {% if can_manage %}
+            <details style="margin-bottom:12px" {% if not accounts %}open{% endif %}>
+                <summary>添加测试账号或更新凭据</summary>
+                <form method="POST" action="{{ url_for('web.project_auth') }}" class="form-grid" style="margin-top:9px" autocomplete="off">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="action" value="save_test_account">
+                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                    <div class="field wide"><label>更新已有账号（留空则新增）</label><select name="test_account_id"><option value="">新增账号</option>{% for account in accounts %}<option value="{{ account.account_id }}">{{ account.display_name or account.username }} / {{ account.username }}</option>{% endfor %}</select></div>
+                    <div class="field"><label>账号</label><input class="layui-input" name="username" autocomplete="off" required></div>
+                    <div class="field"><label>密码</label><input class="layui-input" type="password" name="password" autocomplete="new-password" required></div>
+                    <div class="field wide"><label>显示名称</label><input class="layui-input" name="display_name" placeholder="普通用户 A"></div>
+                    <div class="field wide">
+                        <label>业务身份 JSON（可选，非秘密）</label>
+                        <textarea class="layui-textarea" name="business_identity_json" placeholder='{"userid":"...","entid":"..."}'></textarea>
+                        <div class="muted">用于多账号授权测试的稳定身份映射；不填写则保留已有值。不得填写 Token、Cookie 或密码。</div>
+                    </div>
+                    <button class="layui-btn layui-btn-primary wide" type="submit">保存为新凭据版本</button>
+                </form>
+            </details>
+            {% endif %}
+            {% if selected_environment and can_manage %}
+            <form method="POST" action="{{ url_for('web.project_auth') }}" class="layui-form form-grid">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="save_account_binding">
+                <input type="hidden" name="project_id" value="{{ project_id }}">
+                <input type="hidden" name="env_id" value="{{ env_id }}">
+                <div class="field wide">
+                    <label>已有测试账号</label>
+                    <select name="account_id" required>
+                        <option value="">请选择</option>
+                        {% for account in accounts %}
+                            <option value="{{ account.account_id }}">{{ account.display_name or account.username }} / {{ account.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label>项目内账号别名</label>
+                    <input class="layui-input" name="account_key" placeholder="owner / attacker / admin" required>
+                </div>
+                <div class="field">
+                    <label>测试角色</label>
+                    <input class="layui-input" name="role" value="test" placeholder="owner">
+                </div>
+                <div class="field">
+                    <label>账号用途</label>
+                    <select name="is_test_account">
+                        <option value="1" selected>测试账号（可用于测试/预发写入）</option>
+                        <option value="0">非测试账号（只读）</option>
+                    </select>
+                </div>
+                <div class="field wide">
+                    <label>显示名称</label>
+                    <input class="layui-input" name="display_name" placeholder="普通用户 A">
+                </div>
+                <button class="layui-btn wide" type="submit">绑定或更新账号</button>
+            </form>
+            {% elif not selected_environment %}
+                <div class="empty">先保存一个项目环境，再绑定账号。</div>
+            {% endif %}
+            {% for binding in bindings %}
+                {% set bound_account = binding_accounts.get(binding.account_id) %}
+                <div class="record">
+                    <div class="record-head">
+                        <div><strong>{{ binding.account_key }}</strong> · {{ binding.display_name or (bound_account.display_name if bound_account else binding.account_id) }}</div>
+                        <span class="tag {% if binding.active %}tag-ok{% else %}tag-off{% endif %}">{% if binding.active %}可用{% else %}停用{% endif %}</span>
+                    </div>
+                    <div class="muted">角色：{{ binding.role }}；账号：{{ bound_account.username if bound_account else '待迁移' }}；{% if binding.is_test_account %}测试账号{% else %}只读账号{% endif %}</div>
+                </div>
+            {% endfor %}
+        </section>
+    </div>
+
+    <section class="panel">
+        <div class="panel-title">
+            <div>
+                <h2>3. 可选认证方案</h2>
+                <div class="muted">认证域负责登录 Host，项目环境负责业务 Host；方案版本只能缩小业务 Host 范围。每次执行会固化方案、Realm 和 Recipe 版本。</div>
+            </div>
+            <span class="tag">{{ profiles|length }} 套方案</span>
+        </div>
+        {% if resume_run_id %}
+            <div class="warning-box">批次 {{ resume_run_id }} 正在等待认证恢复。请选择对应方案执行验证；只有验证成功才会精确恢复这个原批次，不会创建重复案例。</div>
+        {% endif %}
+        <div class="grid-2">
+            <div>
+                {% if selected_environment and bindings and can_manage %}
+                <form method="POST" action="{{ url_for('web.project_auth') }}" class="layui-form form-grid">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="action" value="save_auth_profile">
+                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                    <input type="hidden" name="profile_id" value="{{ edit_profile.profile_id if edit_profile else '' }}">
+                    <input type="hidden" name="active" value="1">
+                    <div class="field">
+                        <label>方案名称</label>
+                        <input class="layui-input" name="name" value="{{ edit_profile.name if edit_profile else '' }}" placeholder="普通用户混合认证" required>
+                    </div>
+                    <div class="field">
+                        <label>绑定账号</label>
+                        <select name="account_key" required>
+                            {% for binding in bindings if binding.active %}
+                                <option value="{{ binding.account_key }}" {% if edit_profile and edit_profile.account_key == binding.account_key %}selected{% endif %}>{{ binding.display_name or binding.account_key }}（{{ binding.account_key }}）</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>凭据注入方式</label>
+                        <select name="auth_kind">
+                            {% for kind in ['mixed', 'bearer', 'cookie'] %}
+                                <option value="{{ kind }}" {% if edit_profile and edit_profile.auth_kind == kind %}selected{% endif %}>{{ kind }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>无明确过期时间时的有效期（秒）</label>
+                        <input class="layui-input" name="max_age_seconds" value="{{ edit_profile.metadata.get('max_age_seconds', 1800) if edit_profile else 1800 }}">
+                    </div>
+                    <div class="field wide">
+                        <label>允许的业务 Origin（留空继承环境）</label>
+                        <input class="layui-input" name="allowed_hosts" value="{{ edit_profile_revision.allowed_business_origins|join(', ') if edit_profile_revision else '' }}" placeholder="https://api.example.test">
+                    </div>
+                    <div class="field wide">
+                        <label>认证域版本</label>
+                        <select name="realm_revision_id" required>
+                            <option value="">请选择明确的认证域</option>
+                            {% for realm in realm_options %}
+                                <option value="{{ realm.id }}" {% if edit_profile_revision and edit_profile_revision.realm_revision_id == realm.id %}selected{% endif %}>{{ realm.label }}{% if not realm.tls_verify %}（TLS 校验关闭）{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <label class="wide"><input type="checkbox" name="is_default" value="1" {% if not edit_profile or edit_profile.is_default %}checked{% endif %}> 设为此环境默认方案</label>
+                    <button class="layui-btn wide" type="submit">{% if edit_profile %}更新认证方案{% else %}创建认证方案{% endif %}</button>
+                    {% if edit_profile %}<a class="layui-btn layui-btn-primary wide" href="{{ url_for('web.project_auth', project_id=project_id, env_id=env_id) }}">取消编辑</a>{% endif %}
+                </form>
+                {% elif not bindings %}
+                    <div class="empty">先绑定至少一个测试账号。</div>
+                {% endif %}
+            </div>
+            <div>
+                {% for profile in profiles %}
+                    {% set health = health_by_revision.get(profile.current_revision_id) %}
+                    {% set attempt = latest_attempt_by_revision.get(profile.current_revision_id) %}
+                    <div class="record {% if health and health.status == 'healthy' %}healthy{% elif health and health.status in ['failed','interactive_required','degraded'] %}failed{% endif %}">
+                        <div class="record-head">
+                            <div>
+                                <strong>{{ profile.name }}</strong>
+                                {% if profile.is_default %}<span class="tag tag-ok">默认</span>{% endif %}
+                            </div>
+                            <span class="tag {% if health and health.status == 'healthy' %}tag-ok{% elif health and health.status in ['failed','interactive_required','degraded'] %}tag-warn{% else %}tag-off{% endif %}">
+                                {{ health.status if health else 'unknown' }}
+                            </span>
+                        </div>
+                        <div class="muted">
+                            {{ profile.account_key }} · {{ profile.auth_kind }} · {{ profile.provider_id }}
+                            · {{ profile.metadata.get('login_scene', profile.purpose) }}
+                            / {{ profile.metadata.get('role_key', 'default') }}
+                            / {{ profile.metadata.get('login_mode', profile.provider_id) }}
+                            · 版本 {{ profile.current_revision_id or '待迁移' }}
+                        </div>
+                        <div class="toolbar">
+                            {% for host in profile.allowed_hosts %}<span class="tag">{{ host }}</span>{% endfor %}
+                            {% if health and health.last_verified_at %}<span class="tag tag-ok">最近验证 {{ health.last_verified_at }}</span>{% else %}<span class="tag tag-warn">尚未验证</span>{% endif %}
+                        </div>
+                        {% if health and health.error_code %}
+                            <div class="diagnostic">
+                                {% if health.error_code == 'CREDENTIAL_REJECTED' %}
+                                    <strong style="color:#b42318;">⚠ 账号或密码被服务器拒绝</strong><br>
+                                    认证服务在登录阶段返回了 401/403。通常是密码过期、账号锁定或认证地址变更。<br>
+                                    <strong>修复方法</strong>：在下方直接输入新密码，点击「更新凭据并验证」。
+                                {% elif health.error_code == 'AUTH_HOST_UNREACHABLE' %}
+                                    <strong style="color:#b42318;">⚠ 无法连接认证服务器</strong><br>
+                                    认证 Host 不可达，请检查网络或认证域配置。
+                                {% elif health.error_code == 'CONFIG_INVALID' %}
+                                    <strong style="color:#b42318;">⚠ 认证配置无效</strong><br>
+                                    Recipe 或认证域配置有误，请点击「高级认证」检查。
+                                {% else %}
+                                    <strong>{{ health.error_code }}</strong> · 阶段 {{ health.stage or 'runtime' }}<br>
+                                    {{ health.error_summary or '认证未建立，请检查账号、认证域和登录协议。' }}
+                                {% endif %}
+                            </div>
+                            {# ── 内联快速修复表单 ── #}
+                            {% if can_manage and health.error_code == 'CREDENTIAL_REJECTED' %}
+                            <div style="border:2px solid #009688;background:#f0fdfa;padding:12px;margin-top:8px;">
+                                <strong style="color:#007f73;">🔧 快速修复：更新凭据并验证</strong>
+                                <form method="POST" action="{{ url_for('web.project_auth') }}" class="form-grid" style="margin-top:8px;" autocomplete="off">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="quick_fix_auth">
+                                    <input type="hidden" name="project_id" value="{{ project_id }}">
+                                    <input type="hidden" name="env_id" value="{{ env_id }}">
+                                    <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                                    <input type="hidden" name="resume_run_id" value="{{ resume_run_id }}">
+                                    {% set bound = bindings | selectattr('account_key', 'equalto', profile.account_key) | list %}
+                                    {% if bound %}
+                                    <input type="hidden" name="account_id" value="{{ bound[0].account_id }}">
+                                    {% endif %}
+                                    <div class="field">
+                                        <label>新密码</label>
+                                        <input class="layui-input" type="password" name="password" autocomplete="new-password" required placeholder="输入新密码">
+                                    </div>
+                                    <div class="field" style="display:flex;align-items:flex-end;">
+                                        <button class="layui-btn" type="submit" style="width:100%;">更新凭据并验证</button>
+                                    </div>
+                                </form>
+                            </div>
+                            {% endif %}
+                        {% endif %}
+                        {% if attempt %}
+                            <details class="diagnostic"><summary>最近一次验证做了什么</summary>
+                                <div>{{ attempt.request_count }} / {{ attempt.max_requests }} 次认证请求；状态 {{ attempt.status }}；阶段 {{ attempt.stage }}。</div>
+                                {% for item in attempt.diagnostics %}<div class="muted">{{ item.stage }} · {{ item.kind or item.status }}{% if item.origin %} · {{ item.origin }}{{ item.path }}{% endif %}{% if item.status_code %} · HTTP {{ item.status_code }}{% endif %}</div>{% endfor %}
+                            </details>
+                        {% endif %}
+                        {% if can_manage and profile.current_revision_id and profile.provider_id == 'auth_recipe' %}
+                            <div class="toolbar">
+                                <a class="layui-btn layui-btn-warm layui-btn-xs" href="{{ url_for('web.auth_realm_repair', project_id=project_id, env_id=env_id, profile_id=profile.profile_id, resume_run_id=resume_run_id) }}">
+                                    高级认证 / 修复认证域
+                                </a>
+                                <span class="muted">特殊 SSO、二次 Token 和多步认证在独立工作台配置。</span>
+                            </div>
+                        {% endif %}
+                        {% if can_manage %}
+                        <div class="toolbar">
+                            <form method="POST" action="{{ url_for('web.project_auth') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="validate_auth_profile">
+                                <input type="hidden" name="project_id" value="{{ project_id }}">
+                                <input type="hidden" name="env_id" value="{{ env_id }}">
+                                <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                                <input type="hidden" name="max_requests" value="3">
+                                <input type="hidden" name="resume_run_id" value="{{ resume_run_id }}">
+                                <button class="layui-btn layui-btn-xs" type="submit" {% if not profile.current_revision_id %}disabled{% endif %}>验证认证并刷新{% if resume_run_id %} / 恢复批次{% endif %}</button>
+                            </form>
+                            {% if profile.provider_id == 'auth_recipe' %}
+                                <a class="layui-btn layui-btn-primary layui-btn-xs" href="{{ url_for('web.project_auth', project_id=project_id, env_id=env_id, edit_profile_id=profile.profile_id) }}">编辑</a>
+                            {% else %}
+                                <a class="layui-btn layui-btn-primary layui-btn-xs" href="{{ url_for('web.auth_import_wizard', project_id=project_id, env_id=env_id) }}">在快捷导入页更新</a>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('web.project_auth') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="toggle_profile">
+                                <input type="hidden" name="project_id" value="{{ project_id }}">
+                                <input type="hidden" name="env_id" value="{{ env_id }}">
+                                <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                                <button class="layui-btn layui-btn-primary layui-btn-xs" type="submit">{% if profile.active %}停用{% else %}启用{% endif %}</button>
+                            </form>
+                            {% if not profile.is_default %}
+                            <form method="POST" action="{{ url_for('web.project_auth') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="set_default_profile">
+                                <input type="hidden" name="project_id" value="{{ project_id }}">
+                                <input type="hidden" name="env_id" value="{{ env_id }}">
+                                <input type="hidden" name="profile_id" value="{{ profile.profile_id }}">
+                                <button class="layui-btn layui-btn-xs" type="submit">设为默认</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="empty">还没有认证方案。创建后，参数验证页面即可直接选择。</div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

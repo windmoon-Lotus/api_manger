@@ -1,0 +1,33 @@
+{
+  "schema_version": "rule.v1",
+  "rule_id": "parameter.empty_intersection.insufficient_evidence",
+  "version": 1,
+  "kind": "offline_inference",
+  "enabled": true,
+  "scope": {
+    "same_project": true,
+    "same_environment": true,
+    "principal_relation": "same_profile_revision"
+  },
+  "inputs": ["response_parameter", "request_parameter"],
+  "predicates": [
+    {"name": "parameter.canonical_name_equal.v1"},
+    {"name": "value.intersection_empty.v1"},
+    {"name": "parameter.resource_relation_allowed.v1"},
+    {"name": "type.compatible.v1"},
+    {"name": "locator.interpretable.v1"}
+  ],
+  "score": {
+    "base": 0.0,
+    "features": []
+  },
+  "emit": {
+    "adapter": "parameter_relation_candidate.v1",
+    "args": {"relation": "insufficient_evidence"}
+  },
+  "safety": {
+    "network": "forbidden",
+    "mutation": "forbidden",
+    "max_matches": 10000
+  }
+}

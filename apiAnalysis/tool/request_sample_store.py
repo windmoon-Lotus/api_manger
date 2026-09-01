@@ -57,7 +57,9 @@ def sample_signature(method, url, path, query, body, headers=None):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def save_request_sample(data, method, url, path, domain, query, headers, body, response_status_code, response_body):
+def save_request_sample(data, method, url, path, domain, query, headers, body, response_status_code, response_body,
+                        project_id="", env_id="", account_id="", import_run_id="", observation_id="",
+                        source="traffic"):
     signature = sample_signature(method, url, path, query, body, headers=headers)
     now = datetime.datetime.utcnow()
     sample = request_sample.objects(raw_data=data, sample_signature=signature).first()
@@ -67,6 +69,12 @@ def save_request_sample(data, method, url, path, domain, query, headers, body, r
         sample.response_status_code = response_status_code
         sample.response_len = _body_len(response_body)
         sample.response_hash = _body_hash(response_body)
+        sample.project_id = project_id or sample.project_id
+        sample.env_id = env_id or sample.env_id
+        sample.account_id = account_id or sample.account_id
+        sample.import_run_id = import_run_id or sample.import_run_id
+        sample.observation_id = observation_id or sample.observation_id
+        sample.source = source or sample.source or "traffic"
         if sample.response_sample in [None, ""]:
             sample.response_sample = _sample_response(response_body)
         sample.save()
@@ -80,6 +88,12 @@ def save_request_sample(data, method, url, path, domain, query, headers, body, r
         pathid=data.ptah_id,
         raw_data=data,
         sample_signature=signature,
+        source=source or "traffic",
+        project_id=project_id or "",
+        env_id=env_id or "",
+        account_id=account_id or "",
+        import_run_id=import_run_id or "",
+        observation_id=observation_id or "",
         method=(method or "GET").upper(),
         url=url,
         path=path,
@@ -99,5 +113,13 @@ def save_request_sample(data, method, url, path, domain, query, headers, body, r
     return sample
 
 
-def best_request_sample(data):
-    return request_sample.objects(raw_data=data).order_by("-last_seen").first()
+def best_request_sample(data, *, project_id="", env_id="", account_id=""):
+    """Return the newest sample without crossing an explicit runtime context."""
+    query = {"raw_data": data}
+    if project_id:
+        query["project_id"] = str(project_id)
+    if env_id:
+        query["env_id"] = str(env_id)
+    if account_id:
+        query["account_id"] = str(account_id)
+    return request_sample.objects(**query).order_by("-last_seen").first()

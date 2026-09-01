@@ -24,8 +24,10 @@ proxies = {
 #   "https": "https://127.0.0.1:8080",
 # }
 
-# cors
-cors_origin = '*'
+# CORS is local-only by default. Use a comma-separated allowlist when the UI is
+# intentionally served from other trusted origins.
+_cors_value = os.getenv("API_MANAGER_CORS_ORIGINS", "http://127.0.0.1:5000,http://localhost:5000")
+cors_origin = [item.strip() for item in _cors_value.split(",") if item.strip()]
 
 # requests超时时间
 timeout = 5
