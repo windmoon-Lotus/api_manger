@@ -1,10 +1,15 @@
+import importlib.util
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from apiAnalysis.conf import data_paths
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "apiAnalysis" / "conf" / "data_paths.py"
+SPEC = importlib.util.spec_from_file_location("data_paths", str(MODULE_PATH))
+data_paths = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(data_paths)
 
 
 class PrivateDataPathTests(unittest.TestCase):
