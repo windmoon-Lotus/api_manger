@@ -22,7 +22,7 @@ def default_credentials_file():
     if configured:
         return Path(configured).expanduser().resolve()
     workspace_root = Path(__file__).resolve().parent.parent
-    return workspace_root / ".secrets" / "api-manager-web.local.env"
+    return workspace_root / ".secrets" / 'infrastructure/credentials/api-manager-web.local.env'
 
 
 def _parse_env_file(path):

@@ -97,7 +97,7 @@ install authentication code.
 
 When `run_web.py` starts without `API_MANAGER_ADMIN_PASSWORD`, it generates a
 local administrator password and Flask secret once, writes them to
-`../.secrets/api-manager-web.local.env`, and prints the password only during
+`../.secrets/infrastructure/credentials/api-manager-web.local.env`, and prints the password only during
 that first generation. Later starts load the file silently. Override the path
 with `API_MANAGER_WEB_CREDENTIALS_FILE`; explicit credential environment
 variables always win and are not copied into the generated file.

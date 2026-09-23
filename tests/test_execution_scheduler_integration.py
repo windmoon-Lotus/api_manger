@@ -282,7 +282,7 @@ class ExecutionSchedulerIntegrationTests(unittest.TestCase):
         self.assertEqual(legacy.last_error_type, "LegacyRunExpired")
         request_execution_cancel(orphan.id, reason="integration_cleanup")
 
-    def test_unknown_adapter_pauses_before_replay_and_generic_mutation_is_rejected(self):
+    def test_unknown_adapter_pauses_before_replay_and_generic_mutation_requires_single_dispatch(self):
         snapshot = self._snapshot(990004, "/unsupported")
         context = ExecutionContext(
             project_id=self.project_id,
@@ -320,7 +320,7 @@ class ExecutionSchedulerIntegrationTests(unittest.TestCase):
             adapter_id="snapshot_batch",
             plan_version="mutation-v1",
         )
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "max_dispatch_attempts=1"):
             enqueue_snapshot_batch(
                 "generic mutation",
                 "snapshot_baseline",
@@ -334,6 +334,17 @@ class ExecutionSchedulerIntegrationTests(unittest.TestCase):
                 ),
                 queue_name=self.queue_name,
             )
+        admitted, created = enqueue_snapshot_batch(
+            "acknowledged generic mutation", "snapshot_baseline", generic_context,
+            [mutation.id],
+            policy=ExecutionPolicy(max_workers=1, per_host_workers=1,
+                                   max_dispatch_attempts=1, allow_mutation=True,
+                                   mutation_acknowledged=True),
+            queue_name=self.queue_name,
+        )
+        self.assertTrue(created)
+        self.assertEqual(admitted.status, security_test_run.QUEUED)
+        request_execution_cancel(admitted.id, reason="integration_cleanup")
 
     def test_auth_dependency_resume_requires_the_exact_profile_revision(self):
         run = security_test_run(

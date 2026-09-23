@@ -44,7 +44,7 @@ Web 不包含 worker、定时任务或业务请求执行。实际持续运行时
 worker。默认页面为 `http://127.0.0.1:5000`。
 
 首次启动且没有显式管理员密码时，启动器会生成本地密码与 Flask 密钥并保存到
-`..\.secrets\api-manager-web.local.env`。密码仅首次显示。显式环境变量始终优先：
+`..\.secrets\infrastructure\credentials\api-manager-web.local.env`。密码仅首次显示。显式环境变量始终优先：
 
 ```powershell
 $env:API_MANAGER_SECRET_KEY="replace-with-a-long-random-value"

@@ -1,0 +1,15 @@
+{% extends 'layout.html' %}{% block body %}<main class="x-body">
+<h1>AI 导航</h1><p>让外部 AI 通过 API Key 使用接口测试平台，并回读实际执行结果。</p>
+<p><a href="{{ url_for('web.ai_keys') }}">管理 API Key</a> · <a href="?format=markdown">纯文本启动指南</a></p>
+<h2>1. 配置接入</h2><p>选择只读或继承账号业务权限；项目限制可选。账号降权后 Key 同步降权，不能管理账号、密码或其他密钥。平台地址保存在 <code>API_MANAGER_URL</code>，密钥保存在 <code>API_MANAGER_ACCESS_KEY</code>。远程访问使用 HTTPS。</p>
+<h2>2. 安装并直接使用本地 CLI</h2><p>在仓库根目录安装，之后可从任意目录调用。Python 3.9+，无需安装平台数据库或 Web 依赖。</p><pre>python -m pip install -e ./clients/authcheck_cli
+authcheck doctor
+authcheck capabilities
+authcheck projects</pre><p>也可用 <code>python tools/ai_access_client.py</code> 加相同命令。复用已配置的 Key；日常调用不需要重新编写 Python 请求脚本或读取网页登录密码。</p>
+<h2>3. 一条命令执行与等待</h2><pre>authcheck readiness PLAN_ID --project PROJECT_ID
+authcheck run PLAN_ID --project PROJECT_ID --idempotency-key UNIQUE_OPERATION_KEY --timeout 120
+authcheck wait RUN_ID --project PROJECT_ID --timeout 120
+authcheck results RUN_ID --project PROJECT_ID</pre><p>ID 来自平台返回值。run 自动检查前提、提交并等待完整结果；超时后用 wait 继续读原任务。不确定是否提交成功时用 receipt 查询原幂等键，不能换新键重复执行。</p>
+<h2>4. 交给 AI 的入口</h2><pre style="white-space:pre-wrap">{{ bootstrap }}</pre>
+<h2>5. 看效果与缺陷</h2><p>Key 页面提供请求编号、状态和耗时。结果区分执行终态、结果完整性、机器候选和证据不足。排队成功、HTTP 200、空结果和静态预检均不能代替业务验证。客户端不会自动激活计划、启动 worker 或管理 Key。</p>
+</main>{% endblock %}

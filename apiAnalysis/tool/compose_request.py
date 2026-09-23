@@ -14,6 +14,20 @@ from apiAnalysis.db.collection import (
     request_snapshot,
 )
 from apiAnalysis.tool.parameter_dependency import resolve_parameter_value, trusted_relation_value
+from apiAnalysis.tool.parameter_sources import (
+    SOURCE_EMPTY_DEFAULT,
+    SOURCE_OMITTED_EMPTY_OPTIONAL,
+    SOURCE_PARAMETER_ARCHIVE,
+    SOURCE_PARAMETER_ARCHIVE_PROJECT_SCOPED,
+    SOURCE_PARAMETER_DEPENDENCY,
+    SOURCE_PARAMETER_RELATION,
+    SOURCE_REQ_DATA,
+    VALUE_QUALITY_OBSERVED,
+    VALUE_QUALITY_PLACEHOLDER,
+    VALUE_QUALITY_SAMPLED,
+    VALUE_QUALITY_UNKNOWN,
+    is_placeholder_value,
+)
 from apiAnalysis.project_context import asset_context
 from apiAnalysis.tool.request_sample_store import best_request_sample
 from apiAnalysis.tool.parameter_locator import parameter_locator, set_value_at_locator
@@ -28,19 +42,35 @@ def _select_value(values):
 
 
 def _lookup_archive_value(parameter_name, pathid, account_id=None, project_id=None, env_id=None):
-    query = {"parameter": parameter_name, "req_pathid__contains": pathid}
+    """Last-resort archive lookup, scoped exactly like ``_archive_value``.
+
+    Returns ``(value, source_literal, value_quality)``. Rows attributed to another
+    account are never used, and the project/environment boundary is never dropped.
+
+    This helper only ever reads ``req_value`` -- a value some client *sent* -- so
+    anything it returns is request-sample quality by construction; it is never
+    evidence that the target will accept the value.
+    """
+    base = {"parameter": parameter_name, "req_pathid__contains": pathid}
     if project_id:
-        query["project_id"] = project_id
+        base["project_id"] = project_id
     if env_id:
-        query["env_id"] = env_id
-    if account_id:
-        query["account_id"] = account_id
-    entry = parameter_archive.objects(**query).first()
-    if not entry and account_id and not project_id and not env_id:
-        entry = parameter_archive.objects(parameter=parameter_name, req_pathid__contains=pathid).first()
+        base["env_id"] = env_id
+    if not account_id:
+        entry = parameter_archive.objects(**base).first()
+        if entry and entry.req_value:
+            return _select_value(entry.req_value), SOURCE_PARAMETER_ARCHIVE, VALUE_QUALITY_SAMPLED
+        return None, None, VALUE_QUALITY_UNKNOWN
+    entry = parameter_archive.objects(account_id=account_id, **base).first()
     if entry and entry.req_value:
-        return _select_value(entry.req_value)
-    return None
+        return _select_value(entry.req_value), SOURCE_PARAMETER_ARCHIVE, VALUE_QUALITY_SAMPLED
+    for row in parameter_archive.objects(**base):
+        if str(getattr(row, "account_id", "") or ""):
+            continue
+        if row.req_value:
+            return (_select_value(row.req_value), SOURCE_PARAMETER_ARCHIVE_PROJECT_SCOPED,
+                    VALUE_QUALITY_SAMPLED)
+    return None, None, VALUE_QUALITY_UNKNOWN
 
 
 def _normalize_parameter_name(name):
@@ -176,36 +206,49 @@ def build_request_payload(pathid: int, account_id: str = None, env_id: str = Non
         if not name:
             continue
         value = _select_value(entry.value)
-        value_source = "req_data"
+        value_source = SOURCE_REQ_DATA
+        value_quality = VALUE_QUALITY_UNKNOWN
         dependency_meta = {}
         if value is None:
             value, dependency_meta = _resolve_dependency_value(
                 name, pathid, account_id=account_id, project_id=project_id, env_id=env_id
             )
-            value_source = dependency_meta.get("source") or "parameter_dependency"
+            value_source = dependency_meta.get("source") or SOURCE_PARAMETER_DEPENDENCY
+            value_quality = dependency_meta.get("value_quality") or VALUE_QUALITY_UNKNOWN
         if value is None:
             value = _relation_value(
                 name, pathid, project_id=project_id, env_id=env_id,
             )
-            value_source = "parameter_relation"
+            value_source = SOURCE_PARAMETER_RELATION
+            value_quality = VALUE_QUALITY_UNKNOWN
         if value is None:
-            value = _lookup_archive_value(
+            value, value_source, value_quality = _lookup_archive_value(
                 name, pathid, account_id=account_id, project_id=project_id, env_id=env_id
             )
-            value_source = "parameter_archive"
         position = entry.position or "body"
         if value is None:
             value = _default_for_missing_parameter(name, position, entry.type, bool(entry.required))
-            value_source = "empty_default"
+            value_source = SOURCE_EMPTY_DEFAULT
+            value_quality = VALUE_QUALITY_UNKNOWN
         if value is None:
             parameter_sources[name] = {
                 "position": position,
-                "source": "omitted_empty_optional",
+                "source": SOURCE_OMITTED_EMPTY_OPTIONAL,
+                "value_quality": VALUE_QUALITY_UNKNOWN,
                 "required": bool(entry.required),
                 "type": entry.type or "",
                 "dependency": dependency_meta,
             }
             continue
+        # Label the value honestly before it is sent.  A synthetic default, or a
+        # literal that is documentation noise, is not a resource reference: a
+        # 4xx to such a request is indistinguishable from a correct rejection,
+        # so the execution gate must be able to see that it happened.  An
+        # ``observed`` value is left alone -- the target itself returned it.
+        if value_source == SOURCE_EMPTY_DEFAULT:
+            value_quality = VALUE_QUALITY_PLACEHOLDER
+        elif value_quality != VALUE_QUALITY_OBSERVED and is_placeholder_value(value):
+            value_quality = VALUE_QUALITY_PLACEHOLDER
         content_type = entry.Content_type or content_type
         locator = dict(entry.locator or {}) or parameter_locator(
             name,
@@ -216,6 +259,7 @@ def build_request_payload(pathid: int, account_id: str = None, env_id: str = Non
         parameter_sources[name] = {
             "position": position,
             "source": value_source,
+            "value_quality": value_quality,
             "required": bool(entry.required),
             "type": entry.type or "",
             "dependency": dependency_meta,

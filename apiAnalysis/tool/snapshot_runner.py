@@ -260,7 +260,8 @@ def _request_kwargs(snapshot, auth_mode=None, request_options=None, account_cont
 
 def _replay_snapshot(snapshot, mutation=None, auth_mode=None, request_options=None,
                      account_context=None, capture_json=False,
-                     request_trace_callback=None, request_trace_phase="request"):
+                     request_trace_callback=None, request_trace_phase="request",
+                     response_text_callback=None):
     if mutation:
         raise NotImplementedError("mutation replay should use standard payload mutator before snapshot persistence")
     started = time.perf_counter()
@@ -287,6 +288,14 @@ def _replay_snapshot(snapshot, mutation=None, auth_mode=None, request_options=No
             **request_kwargs
         )
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+        if response_text_callback is not None:
+            # Hand the caller the response text it asked for.  The text never
+            # enters `evidence`, so body-free evidence stays body-free; and a
+            # consumer failure must not alter request execution.
+            try:
+                response_text_callback(response.text or "")
+            except Exception:
+                pass
         expected = snapshot.expected_status_codes or []
         ok = response.status_code in expected if expected else 200 <= response.status_code < 400
         content = response.content or b""
@@ -366,7 +375,7 @@ def _replay_snapshot(snapshot, mutation=None, auth_mode=None, request_options=No
 
 def replay_snapshot(snapshot, mutation=None, auth_mode=None, request_options=None,
                     account_context=None, request_trace_callback=None,
-                    request_trace_phase="request"):
+                    request_trace_phase="request", response_text_callback=None):
     """Replay one request snapshot and return body-free structured evidence."""
     return _replay_snapshot(
         snapshot,
@@ -377,13 +386,15 @@ def replay_snapshot(snapshot, mutation=None, auth_mode=None, request_options=Non
         capture_json=False,
         request_trace_callback=request_trace_callback,
         request_trace_phase=request_trace_phase,
+        response_text_callback=response_text_callback,
     )
 
 
 def replay_snapshot_with_json(snapshot, mutation=None, auth_mode=None,
                               request_options=None, account_context=None,
                               request_trace_callback=None,
-                              request_trace_phase="request"):
+                              request_trace_phase="request",
+                              response_text_callback=None):
     """Replay for an in-process dependency adapter.
 
     The parsed JSON value is returned only to the caller and must not be placed
@@ -398,6 +409,7 @@ def replay_snapshot_with_json(snapshot, mutation=None, auth_mode=None,
         capture_json=True,
         request_trace_callback=request_trace_callback,
         request_trace_phase=request_trace_phase,
+        response_text_callback=response_text_callback,
     )
 
 

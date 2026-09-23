@@ -98,6 +98,13 @@ def ensure_source_binding(
     if env_id and not ProjectEnvironment.objects(
             project_id=project.project_id, env_id=env_id, active=True).first():
         raise ValueError("selected project environment is unavailable")
+    if env_id:
+        # A project/environment pair becomes usable here, which is the first
+        # moment a plan can be scoped to it.  Imported lazily to keep this
+        # module free of a hard dependency on the planning tables.
+        from apiAnalysis.tool.unlock_plan import ensure_plan_seeded
+
+        ensure_plan_seeded(project_id=project.project_id, env_id=env_id)
 
     binding = ProjectSourceBinding.objects(
         project_id=project.project_id,

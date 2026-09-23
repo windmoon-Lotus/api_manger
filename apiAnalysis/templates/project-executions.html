@@ -309,7 +309,7 @@
         <div class="execution-metric"><span>排队</span><strong>{{ execution_status_counts.queued or 0 }}</strong></div>
         <div class="execution-metric"><span>执行中</span><strong>{{ execution_status_counts.running or 0 }}</strong></div>
         <div class="execution-metric"><span>已暂停</span><strong>{{ execution_status_counts.paused or 0 }}</strong></div>
-        <div class="execution-metric"><span>已完成</span><strong>{{ execution_status_counts.done or 0 }}</strong></div>
+        <div class="execution-metric"><span>运行已结束</span><strong>{{ execution_status_counts.done or 0 }}</strong></div>
         <div class="execution-metric"><span>需复核结果</span><strong>{{ selected_run.review_candidate_count if selected_run else 0 }}</strong></div>
     </section>
 
@@ -553,6 +553,17 @@
                 </tbody>
             </table>
 
+            {% if effectiveness %}
+            <section data-testid="execution-effectiveness" class="layui-elem-quote" style="margin-top:16px;">
+                <h3>本次运行产出了什么</h3>
+                <p>全批次 {{ effectiveness.total }} 条结果：机器判断未发现 {{ effectiveness.machine_pass }}；候选 {{ effectiveness.candidate }}；
+                   无法评估 {{ effectiveness.not_evaluable }}；错误 {{ effectiveness.error }}；待复核 {{ effectiveness.review }}；其他 {{ effectiveness.other }}。</p>
+                <p>无法评估或错误占比：{% if effectiveness.undetermined_percent is not none %}{{ effectiveness.undetermined_percent }}%{% else %}暂无结果{% endif %}。</p>
+                <p>运行结束只表示调度完成。以上是机器结果记录数，不是接口覆盖率，也不代表漏洞已确认或修复已验证。</p>
+                {% for item in effectiveness.actions %}<p><strong>{{ item.message }}（{{ item.count }} 条）</strong>：{{ item.action }}</p>{% endfor %}
+                {% if effectiveness.actions %}<small>同一结果可能有多个原因，原因数量不相加。</small>{% endif %}
+            </section>
+            {% endif %}
             <h3 style="margin-top:16px;">结果（{{ results|length }} / {{ result_count }}）</h3>
             <table class="execution-table" data-testid="result-table">
                 <thead><tr><th>PathId</th><th>用例</th><th>结论</th><th>置信度</th><th>原因</th></tr></thead>

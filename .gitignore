@@ -40,6 +40,8 @@ runtime_*.tmp
 *.log
 apiAnalysis/web/uploads/
 output/
+out/
+*.egg-info/
 uploads/
 captures/
 screenshots/

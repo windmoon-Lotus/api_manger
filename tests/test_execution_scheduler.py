@@ -14,7 +14,9 @@ from apiAnalysis.tool.execution_scheduler import (
     _build_coordinated_request_executor,
     build_idempotency_key,
     classify_execution_result,
+    classify_generic_mutation_result,
     enqueue_snapshot_batch,
+    _load_and_validate_snapshots,
     sanitize_execution_evidence,
     summarize_execution_records,
 )
@@ -25,6 +27,46 @@ class ExecutionSchedulerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ExecutionPolicy(allow_mutation=True).validate()
         ExecutionPolicy(allow_mutation=True, mutation_acknowledged=True).validate()
+
+    def test_generic_mutation_requires_acknowledgement_and_single_dispatch(self):
+        snapshot_id = ObjectId()
+        snapshot = SimpleNamespace(
+            id=snapshot_id, project_id="p1", env_id="test", method="DELETE",
+        )
+        context = ExecutionContext(project_id="p1", env_id="test",
+                                   auth_mode="anonymous", adapter_id="snapshot_batch")
+        with patch("apiAnalysis.tool.execution_scheduler.request_snapshot.objects",
+                   return_value=[snapshot]):
+            with self.assertRaisesRegex(ValueError, "explicitly acknowledged"):
+                _load_and_validate_snapshots([snapshot_id], context, ExecutionPolicy())
+            with self.assertRaisesRegex(ValueError, "max_dispatch_attempts=1"):
+                _load_and_validate_snapshots(
+                    [snapshot_id], context,
+                    ExecutionPolicy(allow_mutation=True, mutation_acknowledged=True),
+                )
+            self.assertEqual(
+                _load_and_validate_snapshots(
+                    [snapshot_id], context,
+                    ExecutionPolicy(allow_mutation=True, mutation_acknowledged=True,
+                                    max_dispatch_attempts=1),
+                ), [snapshot],
+            )
+
+    def test_generic_mutation_response_enters_review_without_effect_claim(self):
+        for status in (201, 204, 400, 403, 404):
+            verdict, reasons, _ = classify_generic_mutation_result(
+                {"status_code": status},
+            )
+            self.assertEqual(verdict, "need_review")
+            self.assertEqual(reasons, ["mutation_response_requires_effect_review"])
+        self.assertEqual(
+            classify_generic_mutation_result({"status_code": 429})[0],
+            "not_evaluable",
+        )
+        self.assertEqual(
+            classify_generic_mutation_result({"error_type": "ReadTimeout"})[0],
+            "error",
+        )
 
     def test_idempotency_is_order_independent_and_context_bound(self):
         first, second = ObjectId(), ObjectId()

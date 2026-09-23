@@ -13,6 +13,15 @@ from apiAnalysis.db.collection import (
     parameter_archive,
     parameter_relation,
 )
+from apiAnalysis.tool.parameter_sources import (
+    SOURCE_PARAMETER_ARCHIVE,
+    SOURCE_PARAMETER_ARCHIVE_PROJECT_SCOPED,
+    SOURCE_PARAMETER_DEPENDENCY_ALIAS,
+    SOURCE_UNRESOLVED,
+    VALUE_QUALITY_OBSERVED,
+    VALUE_QUALITY_SAMPLED,
+    VALUE_QUALITY_UNKNOWN,
+)
 
 
 EXACT_CONFIDENCE = 0.95
@@ -99,40 +108,104 @@ def trusted_relation_value(relation: Any) -> Any:
 
 def _archive_value(names: List[str], pathid: int, account_id: Optional[str], exact_path: bool,
                    project_id: Optional[str] = None, env_id: Optional[str] = None) -> Tuple[Any, Optional[parameter_archive]]:
-    query: Dict[str, Any] = {"parameter__in": names}
-    if project_id:
-        query["project_id"] = project_id
-    if env_id:
-        query["env_id"] = env_id
-    if account_id:
-        query["account_id"] = account_id
-    candidates = list(parameter_archive.objects(**query))
-    # Legacy global fallback is retained only when no explicit project/env
-    # boundary exists. New project-scoped requests must never borrow values
-    # from another context silently.
-    if account_id and not candidates and not project_id and not env_id:
-        candidates = list(parameter_archive.objects(parameter__in=names))
+    """Resolve one archived value for a parameter.
 
-    best = None
-    for item in candidates:
-        if exact_path and pathid not in (item.req_pathid or []) and pathid not in (item.res_pathid or []):
-            continue
-        score = 0
-        if item.account_id == account_id:
-            score += 3
-        if pathid in (item.req_pathid or []):
-            score += 2
-        if pathid in (item.res_pathid or []):
-            score += 1
-        value = select_value(list(item.req_value or []) + list(item.res_value or []))
-        if value in (None, "", [], {}):
-            continue
-        rank = (score, item.id)
-        if best is None or rank > best[0]:
-            best = (rank, value, item)
-    if best:
-        return best[1], best[2]
+    Scope rules, never relaxed:
+
+    * When a project/environment boundary is given it is always applied. Values
+      are never borrowed from another project or environment.
+    * Tier 1 is rows attributed to the requesting account.
+    * Tier 2 is rows in the *same* project/environment that carry no account
+      attribution at all. Offline import is account agnostic by design, so those
+      rows are the bulk of the archive; excluding them made the whole archive
+      unreachable from any account scoped call.
+    * Rows attributed to a different account are never used in either tier.
+    """
+    base: Dict[str, Any] = {"parameter__in": names}
+    if project_id:
+        base["project_id"] = project_id
+    if env_id:
+        base["env_id"] = env_id
+
+    def score_rows(rows: Iterable[Any]) -> Tuple[Any, Optional[parameter_archive]]:
+        best = None
+        for item in rows:
+            if exact_path and pathid not in (item.req_pathid or []) and pathid not in (item.res_pathid or []):
+                continue
+            score = 0
+            if account_id and item.account_id == account_id:
+                score += 3
+            if pathid in (item.req_pathid or []):
+                score += 2
+            if pathid in (item.res_pathid or []):
+                score += 1
+            value = select_value(list(item.req_value or []) + list(item.res_value or []))
+            if value in (None, "", [], {}):
+                continue
+            rank = (score, item.id)
+            if best is None or rank > best[0]:
+                best = (rank, value, item)
+        if best:
+            return best[1], best[2]
+        return None, None
+
+    if not account_id:
+        # No account boundary requested: keep the historic project/env scoped read.
+        value, item = score_rows(list(parameter_archive.objects(**base)))
+        if value is not None:
+            return value, item
+        return None, None
+
+    # Tier 1: the requesting account's own rows.
+    value, item = score_rows(list(parameter_archive.objects(account_id=account_id, **base)))
+    if value is not None:
+        return value, item
+
+    # Tier 2: same project/environment, unattributed rows only.
+    value, item = score_rows([
+        row for row in parameter_archive.objects(**base)
+        if not str(getattr(row, "account_id", "") or "")
+    ])
+    if value is not None:
+        return value, item
     return None, None
+
+
+def _archive_provenance(item: Any, alias: bool = False) -> Tuple[str, str]:
+    """Return ``(source_literal, account_scope)`` for a matched archive row.
+
+    A row that carries an account attribution keeps its historic literal, so no
+    existing consumer changes behaviour. A row with no attribution came from the
+    account agnostic offline import: it is still project/environment scoped, but
+    it is not provably owned by the requesting account, so it gets a distinct
+    literal that mutation consumers can refuse.
+    """
+    if str(getattr(item, "account_id", "") or ""):
+        return (SOURCE_PARAMETER_DEPENDENCY_ALIAS if alias else SOURCE_PARAMETER_ARCHIVE), "account"
+    return SOURCE_PARAMETER_ARCHIVE_PROJECT_SCOPED, "project"
+
+
+def _value_quality(item: Any, value: Any) -> str:
+    """Classify where inside an archive row the chosen value was found.
+
+    Archive rows hold both request and response values. A value that also appears
+    among the row's response values was produced by the target itself; a value
+    that only appears among its request values was merely *sent* by some client
+    and may be an interface-document placeholder. Measured case: ``transfer_id``
+    only ever held ``123``, which the target rejected with 400.
+    """
+    if item is None or value is None:
+        return VALUE_QUALITY_UNKNOWN
+    target = str(value).strip()
+    if not target:
+        return VALUE_QUALITY_UNKNOWN
+    for candidate in (getattr(item, "res_value", None) or []):
+        if str(candidate).strip() == target:
+            return VALUE_QUALITY_OBSERVED
+    for candidate in (getattr(item, "req_value", None) or []):
+        if str(candidate).strip() == target:
+            return VALUE_QUALITY_SAMPLED
+    return VALUE_QUALITY_UNKNOWN
 
 
 def _candidate_role(pathid: int, parameter: str) -> Dict[str, Any]:
@@ -202,11 +275,14 @@ def resolve_parameter_value(
     exact_names = list({name, low})
     value, archive = _archive_value(exact_names, pathid, account_id, exact_path=(low == "id"), project_id=project_id, env_id=env_id)
     if value not in (None, "", [], {}):
+        source, account_scope = _archive_provenance(archive)
         return value, {
-            "source": "parameter_archive",
+            "source": source,
             "confidence": EXACT_CONFIDENCE,
             "parameter": archive.parameter,
             "account_id": archive.account_id or "",
+            "account_scope": account_scope,
+            "value_quality": _value_quality(archive, value),
             "match": "exact",
             "role": role_meta.get("role", ""),
             "role_confidence": role_meta.get("confidence", 0),
@@ -217,20 +293,24 @@ def resolve_parameter_value(
         aliases = sorted(CANONICAL_ALIASES.get(canonical, {canonical}))
         value, archive = _archive_value(aliases, pathid, account_id, exact_path=False, project_id=project_id, env_id=env_id)
         if value not in (None, "", [], {}):
+            source, account_scope = _archive_provenance(archive, alias=True)
             return value, {
-                "source": "parameter_dependency_alias",
+                "source": source,
                 "confidence": ALIAS_CONFIDENCE,
                 "parameter": archive.parameter,
                 "canonical": canonical,
                 "aliases": aliases,
                 "account_id": archive.account_id or "",
+                "account_scope": account_scope,
+                "value_quality": _value_quality(archive, value),
                 "role": role_meta.get("role", ""),
                 "role_confidence": role_meta.get("confidence", 0),
             }
 
     return None, {
-        "source": "unresolved",
+        "source": SOURCE_UNRESOLVED,
         "confidence": 0,
+        "value_quality": VALUE_QUALITY_UNKNOWN,
         "role": role_meta.get("role", ""),
         "role_confidence": role_meta.get("confidence", 0),
     }

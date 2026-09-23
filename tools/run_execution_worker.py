@@ -17,6 +17,7 @@ from apiAnalysis.tool.account_context import (
     resolver_from_environment,
 )
 from apiAnalysis.tool.execution_scheduler import ExecutionWorker, recover_expired_executions
+from apiAnalysis.tool.trace_capture import ExecutionTraceRecorder
 
 
 def main():
@@ -37,6 +38,14 @@ def main():
     parser.add_argument(
         "--trace-requests", action="store_true",
         help="Print transient redacted request previews to stderr before network sends.",
+    )
+    parser.add_argument(
+        "--record-traces", dest="record_traces", action="store_true", default=True,
+        help="Persist one searchable request/response trace per execution (default).",
+    )
+    parser.add_argument(
+        "--no-record-traces", dest="record_traces", action="store_false",
+        help="Disable persistent trace recording for this worker.",
     )
     args = parser.parse_args()
     _ensure_mongo_connection()
@@ -70,6 +79,7 @@ def main():
         lease_seconds=args.lease_seconds,
         account_context_resolver=resolver,
         request_trace_callback=print_request_trace if args.trace_requests else None,
+        trace_recorder=ExecutionTraceRecorder(enabled=args.record_traces),
     )
 
     def stop_worker(*_):
@@ -80,6 +90,7 @@ def main():
         signal.signal(signal.SIGTERM, stop_worker)
     if args.once:
         print(json.dumps({"claimed": worker.run_once(), "recovery": recovered}, sort_keys=True))
+        print(json.dumps({"trace": worker.trace_recorder.stats()}, sort_keys=True))
         return
     worker.run_forever(poll_seconds=args.poll_seconds)
 

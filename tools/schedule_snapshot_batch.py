@@ -112,7 +112,7 @@ def main():
         transport_error_stop=args.transport_error_stop,
         rate_limit_stop=args.rate_limit_stop,
         server_error_stop=args.server_error_stop,
-        max_dispatch_attempts=args.max_dispatch_attempts,
+        max_dispatch_attempts=1 if args.allow_mutation else args.max_dispatch_attempts,
         allow_mutation=args.allow_mutation,
         mutation_acknowledged=args.allow_mutation,
     )

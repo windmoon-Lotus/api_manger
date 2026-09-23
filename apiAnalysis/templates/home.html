@@ -17,6 +17,8 @@
                 <a href="javascript:;">{{ session['username'] }}</a>
                 <dl class="layui-nav-child">
                     <dd><a href="{{ url_for('web.logout') }}">{{ t('nav_logout') }}</a></dd>
+                    <dd><a href="{{ url_for('web.ai_keys') }}">API Key</a></dd>
+                    <dd><a href="{{ url_for('web.ai_navigation') }}">AI 导航</a></dd>
                 </dl>
             </li>
             <li class="layui-nav-item to-index"><a href="{{ url_for('web.home') }}">{{ t('nav_home') }}</a></li>

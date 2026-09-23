@@ -13,6 +13,7 @@ from ..tool.lifecycle_view import (
     execution_result_view,
     execution_run_view,
 )
+from ..tool.execution_effectiveness import summarize_effectiveness
 from ._helpers import (
     _bounded_int,
     _lifecycle_csrf_token,
@@ -115,6 +116,7 @@ def project_execution_center():
     checkpoint_count = 0
     results = []
     result_count = 0
+    effectiveness = None
     run_id = str(request.args.get("run_id") or "")
     if run_id:
         try:
@@ -135,6 +137,10 @@ def project_execution_center():
         ]
         result_query = security_test_result.objects(run_id=selected_run.id).order_by("ctime")
         result_count = result_query.count()
+        effectiveness = summarize_effectiveness(
+            security_test_result.objects(run_id=selected_run.id)
+            .only("verdict", "reason_codes").as_pymongo()
+        )
         results = [
             execution_result_view(item)
             for item in result_query[case_page * case_size:case_page * case_size + case_size]
@@ -154,6 +160,7 @@ def project_execution_center():
         "checkpoint_count": checkpoint_count,
         "results": results,
         "result_count": result_count,
+        "effectiveness": effectiveness,
         "page": page,
         "size": size,
         "case_page": case_page,

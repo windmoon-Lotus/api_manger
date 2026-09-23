@@ -19,3 +19,4 @@ from . import views_review_finding
 from . import views_project_v2
 from . import views_auth_import
 from . import views_mfa_receiver
+from . import views_ai_access

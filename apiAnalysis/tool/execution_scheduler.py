@@ -2,8 +2,8 @@
 
 MongoDB is the source of truth. Redis is only a best-effort wake-up signal, so
 queue state survives Redis restarts and a worker can recover expired leases.
-The default adapter executes read-only request snapshots; mutation snapshots
-require an explicit policy acknowledgement and a workflow-specific adapter.
+The default adapter executes read-only snapshots unless mutations are explicitly
+acknowledged. Generic mutation results require separate effect verification.
 """
 import datetime as dt
 import hashlib
@@ -48,6 +48,11 @@ from apiAnalysis.tool.execution_adapter import (
 from apiAnalysis.tool.execution_contract import ExecutionContext, record_execution_result
 from apiAnalysis.version import EXECUTION_CONTRACT_VERSION
 from apiAnalysis.tool.snapshot_runner import replay_snapshot
+from apiAnalysis.tool.parameter_sources import (
+    apply_required_parameter_gate,
+    required_parameter_quality_summary,
+)
+from apiAnalysis.tool.trace_capture import RESPONSE_TEXT_ADAPTER_IDS
 
 
 WAKEUP_KEY = "api_manager:execution:wakeup"
@@ -224,7 +229,8 @@ def _load_and_validate_snapshots(snapshot_ids: Sequence[ObjectId], context: Exec
     if unsafe and not policy.allow_mutation:
         raise ValueError("mutation snapshots require an explicitly acknowledged policy")
     if unsafe and context.adapter_id in {"snapshot_batch", "authenticated_snapshot_batch"}:
-        raise ValueError("generic snapshot adapters cannot execute mutations; use a readback/cleanup adapter")
+        if policy.max_dispatch_attempts != 1:
+            raise ValueError("generic mutation batches require max_dispatch_attempts=1")
     return ordered
 
 
@@ -699,6 +705,7 @@ def sanitize_execution_evidence(evidence: Dict[str, Any]) -> Dict[str, Any]:
         "authorization_action", "authorization_resource_match_count",
         "authorization_resource_field_count", "resource_path", "value_digest",
         "sqli_screen",
+        "parameter_quality",
     )
     sanitized = {key: evidence.get(key) for key in allowed if key in evidence}
     sanitized["cluster_key"] = response_cluster_key(sanitized)
@@ -752,6 +759,23 @@ def classify_execution_result(evidence: Dict[str, Any], check_type: str,
     if is_unauth:
         return "not_evaluable", ["anonymous_response_not_conclusive"], 0.6
     return "not_evaluable", ["adapter_judge_required"], 0.95
+
+
+def classify_generic_mutation_result(evidence: Dict[str, Any]) -> Tuple[str, List[str], float]:
+    """Report an executed mutation for review without inferring its state change."""
+    if evidence.get("error_type") or evidence.get("error"):
+        return "error", ["transport_error"], 0.9
+    status = evidence.get("status_code")
+    if status is None:
+        return "error", ["transport_error"], 0.9
+    status = int(status)
+    if status == 429:
+        return "not_evaluable", ["rate_limited"], 0.9
+    if 500 <= status < 600:
+        return "not_evaluable", ["server_error"], 0.8
+    if 300 <= status < 400:
+        return "not_evaluable", ["redirect_requires_review"], 0.65
+    return "need_review", ["mutation_response_requires_effect_review"], 0.75
 
 
 def summarize_execution_records(checkpoints: Sequence[Any], results: Sequence[Any],
@@ -995,7 +1019,8 @@ class ExecutionWorker:
                  supported_adapter_ids: Optional[Sequence[str]] = None,
                  adapters: Optional[Sequence[ExecutionAdapter]] = None,
                  account_context_resolver: Optional[AccountContextResolver] = None,
-                 request_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
+                 request_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+                 trace_recorder: Optional[Any] = None):
         self.worker_id = worker_id or "{}:{}".format(socket.gethostname(), uuid.uuid4().hex[:8])
         self.queue_name = queue_name
         self.lease_seconds = int(lease_seconds)
@@ -1003,6 +1028,9 @@ class ExecutionWorker:
         self.judge = judge
         self.account_context_resolver = account_context_resolver or resolver_from_environment()
         self.request_trace_callback = request_trace_callback
+        # Persists one searchable request/response trace per execution.  A
+        # recorder is an observer: its failures are counted, never raised.
+        self.trace_recorder = trace_recorder
         registered = builtin_execution_adapters(replay, judge)
         from apiAnalysis.tool.authorization_matrix import build_authorization_matrix_adapter
         from apiAnalysis.tool.apifox_experiment import build_apifox_experiment_adapter
@@ -1229,6 +1257,13 @@ class ExecutionWorker:
             if not allowed:
                 return finish_blocked(block_reason)
 
+        # Widened response text for the trace chain, when the adapter can supply
+        # it.  Initialised before the try so it survives an exception path.
+        # Append, never overwrite: a lifecycle adapter fires several requests
+        # (before-read, mutation, after-read, cleanup, final readback) through
+        # one replay call, and each deserves its own trace.
+        captured_response_text: List[str] = []
+
         try:
             if should_abort():
                 status = (
@@ -1307,6 +1342,15 @@ class ExecutionWorker:
                         pass
 
                 replay_kwargs["request_trace_callback"] = report_request_trace
+            if (
+                self.trace_recorder is not None
+                and getattr(self.trace_recorder, "enabled", False)
+                and adapter.adapter_id in RESPONSE_TEXT_ADAPTER_IDS
+            ):
+                def capture_response_text(text: str) -> None:
+                    captured_response_text.append(str(text or ""))
+
+                replay_kwargs["response_text_callback"] = capture_response_text
             if adapter.adapter_id in {"parameter_relation_validation", "authorization_matrix"}:
                 def report_progress(progress: Dict[str, Any]) -> None:
                     progress = dict(progress or {})
@@ -1346,8 +1390,23 @@ class ExecutionWorker:
 
         if adapter.request_policy_scope == "checkpoint":
             coordinator.record_outcome(checkpoint.host, evidence)
+        # Provenance labels only, never a parameter value: this lets the gate
+        # below refuse a pass that rests on an unestablished required value,
+        # and persists the reason for later review.
+        parameter_quality = required_parameter_quality_summary(
+            getattr(snapshot, "parameter_sources", None),
+        )
+        if parameter_quality["blocks_pass"] or parameter_quality["request_sample_only_required"]:
+            evidence["parameter_quality"] = parameter_quality
         summary = sanitize_execution_evidence(evidence)
-        verdict, reasons, confidence = adapter.judge(evidence, run.check_type, run.auth_mode)
+        if (adapter.adapter_id in {"snapshot_batch", "authenticated_snapshot_batch"}
+                and str(snapshot.method or "").upper() not in SAFE_METHODS):
+            verdict, reasons, confidence = classify_generic_mutation_result(evidence)
+        else:
+            verdict, reasons, confidence = adapter.judge(evidence, run.check_type, run.auth_mode)
+        verdict, reasons, confidence = apply_required_parameter_gate(
+            verdict, reasons, confidence, evidence.get("parameter_quality"),
+        )
         result = record_execution_result(
             run,
             snapshot,
@@ -1366,6 +1425,26 @@ class ExecutionWorker:
         )
         if adapter.record is not None:
             adapter.record(run, snapshot, evidence, result, checkpoint)
+        if self.trace_recorder is not None:
+            # Observation only: this must not change the checkpoint outcome, so
+            # the recorder is contractually fail-soft.  One trace per captured
+            # response, so a multi-request lifecycle is indexed per request
+            # rather than collapsed into its last response.
+            for ordinal, text in enumerate(captured_response_text):
+                self.trace_recorder.record(
+                    run=run,
+                    snapshot=snapshot,
+                    evidence=evidence,
+                    result=result,
+                    response_text=text,
+                    ordinal=ordinal,
+                )
+            if not captured_response_text:
+                # Adapters outside the response-text allowlist still get a trace
+                # from the evidence they return (their bounded text_sample).
+                self.trace_recorder.record(
+                    run=run, snapshot=snapshot, evidence=evidence, result=result,
+                )
         checkpoint_status = (
             security_execution_checkpoint.ERROR
             if summary.get("error_type") else security_execution_checkpoint.DONE

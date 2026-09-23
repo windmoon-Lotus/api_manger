@@ -22,6 +22,7 @@ from apiAnalysis.tool.apifox_experiment import (
     _profile_execution_context,
 )
 from apiAnalysis.tool.compose_request import build_request_payload, payload_to_snapshot_data
+from apiAnalysis.tool.parameter_sources import MUTATION_BLOCKING_SOURCES
 from apiAnalysis.tool.execution_adapter import ExecutionAdapter
 from apiAnalysis.tool.execution_contract import ExecutionContext
 from apiAnalysis.tool.execution_scheduler import ExecutionPolicy, enqueue_snapshot_batch
@@ -245,7 +246,7 @@ def _synthetic_required_parameters(payload: Mapping[str, Any]) -> List[str]:
         str(name) for name, meta in dict(payload.get("parameter_sources") or {}).items()
         if isinstance(meta, Mapping)
         and bool(meta.get("required"))
-        and str(meta.get("source") or "") == "empty_default"
+        and str(meta.get("source") or "") in MUTATION_BLOCKING_SOURCES
     )
 
 

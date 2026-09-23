@@ -21,8 +21,11 @@ from ..db.collection import (
     ApiProject,
     ProjectAuthProfile,
     ProjectEnvironment,
+    raw_data,
     security_test_plan,
 )
+from ..tool.plan_readiness import assess_plan_readiness
+from ..tool.test_plan import plan_pathids
 from ..tool.test_plan import (
     activate_plan,
     archive_plan,
@@ -34,6 +37,24 @@ from ..tool.test_plan import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _readiness_for_plan(plan):
+    """Read metadata only; no authentication resolution or snapshot creation."""
+    try:
+        pathids = plan_pathids(plan)
+    except (ValueError, TypeError, OverflowError, AttributeError):
+        pathids = []
+    assets = list(raw_data.objects(
+        ptah_id__in=pathids, project_id=plan.project_id,
+    ).only("ptah_id", "project_id", "env_id", "method")) if pathids else []
+    environment = ProjectEnvironment.objects(
+        project_id=plan.project_id, env_id=plan.env_id or "",
+    ).only("project_id", "env_id", "active").first()
+    profile = ProjectAuthProfile.objects(
+        profile_id=plan.auth_profile_id, project_id=plan.project_id,
+    ).only("project_id", "env_id", "active", "lifecycle").first() if plan.auth_profile_id else None
+    return assess_plan_readiness(plan, assets, environment=environment, profile=profile)
 
 
 def _form_pathids(value):
@@ -143,6 +164,17 @@ def test_plans():
                 session["test_plan_notice"] = {"level": "success", "text": "新版本已创建"}
             elif action == "execute":
                 plan_id = request.form.get("plan_id", "")
+                plan = get_plan(plan_id)
+                if plan is None or str(plan.project_id) != project_id:
+                    raise ValueError("计划不存在或不属于所选项目")
+                readiness = _readiness_for_plan(plan)
+                if readiness["status"] == "blocked":
+                    session["test_plan_notice"] = {
+                        "level": "error", "text": "执行前检查未通过，请按缺项提示补齐。",
+                    }
+                    return redirect(url_for(
+                        "web.test_plans", project_id=project_id, readiness_plan_id=plan_id,
+                    ))
                 run, created = schedule_plan_execution(
                     plan_id,
                     operator=session.get("username", ""),
@@ -177,6 +209,13 @@ def test_plans():
         if str(profile.lifecycle or "active") == "active"
     ] if project_id else []
     notice = session.pop("test_plan_notice", None)
+    readiness = None
+    readiness_plan_name = ""
+    selected_id = request.args.get("readiness_plan_id", "")
+    selected = next((plan for plan in plans if str(plan.id) == selected_id), None)
+    if selected is not None:
+        readiness = _readiness_for_plan(selected)
+        readiness_plan_name = selected.name
 
     return {
         "projects": projects,
@@ -187,6 +226,8 @@ def test_plans():
         "status_filter": status_filter or "",
         "check_type_filter": check_type_filter or "",
         "notice": notice,
+        "readiness": readiness,
+        "readiness_plan_name": readiness_plan_name,
         "can_manage": is_manager(),
         "csrf_token": _lifecycle_csrf_token(),
         "plan_statuses": [security_test_plan.DRAFT, security_test_plan.ACTIVE, security_test_plan.ARCHIVED],

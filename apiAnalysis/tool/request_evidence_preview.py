@@ -10,6 +10,8 @@ import re
 from typing import Any, Dict, Mapping, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from apiAnalysis.tool.parameter_sources import WARNING_SOURCES, is_request_sample_only
+
 
 MASK = "<redacted>"
 MAX_STRING = 160
@@ -123,7 +125,8 @@ def _parameter_sources(snapshot: Any) -> Dict[str, Any]:
         row = dict(meta or {}) if isinstance(meta, Mapping) else {"source": str(meta or "")}
         result[str(name)[:100]] = {
             key: safe_value(row.get(key), field_name=key)
-            for key in ("position", "source", "required", "type", "canonical_name", "schema_path")
+            for key in ("position", "source", "value_quality", "required", "type",
+                        "canonical_name", "schema_path")
             if row.get(key) not in (None, "")
         }
     return result
@@ -133,8 +136,14 @@ def request_quality_warnings(snapshot: Any) -> list:
     warnings = []
     for name, meta in dict(getattr(snapshot, "parameter_sources", None) or {}).items():
         row = dict(meta or {}) if isinstance(meta, Mapping) else {}
-        if row.get("source") == "empty_default" and bool(row.get("required")):
+        if str(row.get("source") or "") in WARNING_SOURCES and bool(row.get("required")):
             warnings.append("required_parameter_uses_synthetic_default:{}".format(str(name)[:100]))
+        elif bool(row.get("required")) and is_request_sample_only(row.get("value_quality")):
+            # A value that was only ever seen in a request may be an interface
+            # document placeholder. A 4xx on such a request is not evidence that
+            # the endpoint is broken, and the request must not be read as proof
+            # that the parameter was satisfied with a valid value.
+            warnings.append("required_parameter_value_only_seen_in_a_request:{}".format(str(name)[:100]))
     return sorted(set(warnings))
 
 

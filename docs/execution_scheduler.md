@@ -55,10 +55,14 @@ allows already in-flight requests to finish within their timeout.
 
 The worker uses a renewable lease and heartbeat. Expired work is returned to
 `queued`, and checkpoints that were `running` are reset to `pending`. Network
-execution is therefore **at least once**, not exactly once. The generic
-snapshot adapter rejects non-read methods by default. Mutation workflows must
-explicitly acknowledge mutation risk and should provide idempotency, owner
-readback, and cleanup semantics in a specialized adapter. The bundled worker
+execution is therefore **at least once**, not exactly once. Generic snapshot
+mutations require explicit acknowledgement and `max_dispatch_attempts=1`; an
+ambiguous interrupted send may still have reached the server, so inspect state
+before manually retrying. A normal HTTP response enters `need_review` with its
+status and sanitized evidence; a separate readback or residual-state check
+establishes the effect. Rate limits, server errors and redirects remain
+`not_evaluable`. A specialized lifecycle
+adapter remains available when the endpoint supports restoration or cleanup. The bundled worker
 registers `snapshot_batch` for anonymous/legacy-inherit reads and
 `authenticated_snapshot_batch` for explicit AccountContext reads. A run for an
 unknown adapter, unsupported version or incompatible auth mode is paused before

@@ -21,6 +21,7 @@ from apiAnalysis.db.collection import (
     request_snapshot,
 )
 from apiAnalysis.tool.compose_request import build_request_payload, payload_to_snapshot_data
+from apiAnalysis.tool.parameter_sources import REQUIRED_PATH_BLOCKING_SOURCES
 from apiAnalysis.tool.execution_adapter import ExecutionAdapter
 from apiAnalysis.tool.execution_contract import ExecutionContext
 from apiAnalysis.tool.execution_scheduler import ExecutionPolicy, enqueue_snapshot_batch
@@ -219,7 +220,7 @@ def build_apifox_experiment_plan(
         unresolved_required_path = any(
             str(meta.get("position") or "") == "path"
             and bool(meta.get("required"))
-            and str(meta.get("source") or "") in {"empty_default", "unresolved"}
+            and str(meta.get("source") or "") in REQUIRED_PATH_BLOCKING_SOURCES
             for meta in (payload.get("parameter_sources") or {}).values()
             if isinstance(meta, Mapping)
         )

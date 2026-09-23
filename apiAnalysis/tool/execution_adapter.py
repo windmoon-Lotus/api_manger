@@ -66,7 +66,7 @@ def builtin_execution_adapters(replay: Callable[..., Dict[str, Any]],
             judge=judge,
             auth_modes=frozenset({"anonymous", "inherit"}),
             requires_account_context=False,
-            supports_mutation=False,
+            supports_mutation=True,
         ),
         ExecutionAdapter(
             adapter_id="authenticated_snapshot_batch",
@@ -75,7 +75,7 @@ def builtin_execution_adapters(replay: Callable[..., Dict[str, Any]],
             judge=judge,
             auth_modes=frozenset({"account"}),
             requires_account_context=True,
-            supports_mutation=False,
+            supports_mutation=True,
         ),
     )
     return {adapter.adapter_id: adapter for adapter in adapters}

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from apiAnalysis.tool.execution_adapter import (
     ExecutionAdapter,
     ExecutionAdapterAuthModeMismatch,
-    ExecutionAdapterMutationMismatch,
     UnsupportedExecutionAdapterVersion,
     adapter_registry,
     builtin_execution_adapters,
@@ -49,12 +48,12 @@ class ExecutionAdapterTests(unittest.TestCase):
         with self.assertRaises(UnsupportedExecutionAdapterVersion):
             self.adapters["snapshot_batch"].validate(run)
 
-    def test_generic_adapters_reject_mutation_policy(self):
+    def test_generic_adapters_accept_acknowledged_mutation_policy(self):
         run = SimpleNamespace(
             adapter_id="snapshot_batch", adapter_version="1", auth_mode="anonymous",
         )
-        with self.assertRaises(ExecutionAdapterMutationMismatch):
-            self.adapters["snapshot_batch"].validate(run, allow_mutation=True)
+        self.adapters["snapshot_batch"].validate(run, allow_mutation=True)
+        self.assertTrue(self.adapters["authenticated_snapshot_batch"].supports_mutation)
 
     def test_request_policy_scope_defaults_and_is_validated(self):
         self.assertEqual(

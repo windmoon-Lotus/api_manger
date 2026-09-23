@@ -1389,6 +1389,46 @@ class interface_chain_feedback(Document):
     }
 
 
+class interface_chain_definition(Document):
+    """
+    Persisted, reusable read-chain definition.
+
+    ``definition`` holds the canonical ``interface-chain.v1`` document: ordered
+    read-only steps, Apifox/OpenAPI path templates, request parameter
+    position/type, upstream response references and account-profile references.
+    It must never contain credentials, tokens or raw business IDs; the
+    ``apiAnalysis.tool.interface_chain`` validator enforces that before save.
+    """
+    name = StringField(required=True)
+    schema_version = StringField(required=True)
+    project_id = StringField()
+    env_id = StringField()
+    title = StringField()
+    description = StringField()
+    source_ref = StringField()
+    source_kind = StringField()
+    status = StringField(default="draft")
+    step_count = IntField(default=0)
+    definition = DictField(required=True)
+    definition_sha256 = StringField()
+    created_by = StringField()
+    updated_by = StringField()
+    ctime = DateTimeField(default=datetime.datetime.utcnow)
+    mtime = DateTimeField(default=datetime.datetime.utcnow)
+
+    meta = {
+        'collection': 'interfaceChainDefinition',
+        'indexes': [
+            'name',
+            'project_id',
+            'env_id',
+            'status',
+            'schema_version',
+            {'fields': ['project_id', 'env_id', 'name'], 'unique': True, 'name': 'chain_definition_scope_unique'},
+        ]
+    }
+
+
 class idor_parameter_candidate(Document):
     """
     Endpoint-scoped parameter role used by IDOR construction.
@@ -1966,6 +2006,221 @@ class finding_event(Document):
             'finding_id',
             'event_type',
             '-ctime',
+        ]
+    }
+
+
+class request_trace(Document):
+    """
+    One observed request/response pair, kept as an evidence link.
+
+    Role: a reference chain, not a value source
+    -------------------------------------------
+    This collection answers questions of the form "has any earlier run already
+    seen this response, as whom, when, against which host and parameter".  It is
+    a provenance record for a conclusion.
+
+    It is deliberately NOT a place to read *values* from.  The same URL returns
+    different bodies as accounts rotate, as target data changes, and as the
+    authenticated principal changes, so a body captured earlier is not a current
+    value and must not be fed back into a request.  Values still come from the
+    graded paths (parameter_archive with value_quality observed/sampled, or a
+    fresh read).  A trace only says where an earlier conclusion came from, so
+    that the conclusion can be re-derived and re-checked.
+
+    Immutability
+    ------------
+    Append-only.  Never edit a stored trace to reflect a newer attempt: store a
+    new trace and point the older one forward with ``superseded_by``.  A retest
+    that contradicts an older trace is new evidence, not a correction of
+    history.
+
+    Text bounds
+    -----------
+    ``response_text`` is bounded and ``response_truncated`` marks the cut.
+    ``response_body`` keeps the structured body when the caller has one.  A
+    truncated record never claims to be complete.
+
+    Relationship to the legacy packet store
+    ---------------------------------------
+    ``packet_data``/``packet_record`` capture credential-identification traffic
+    (login and SSO probing).  This collection captures *test execution* traffic,
+    which additionally needs run, engine, parameter, payload and signal
+    provenance before a hit can be interpreted.
+    """
+
+    NO_SIGNAL = "no_signal"
+    ERROR_SIGNAL = "error_signal"
+    BOOLEAN_SIGNAL = "boolean_signal"
+    INPUT_TEXT_DEPENDENT = "input_text_dependent"
+    BLOCKED = "blocked"
+    NOT_REACHED = "not_reached"
+    PARSE_FAIL = "parse_fail"
+    UNDETERMINED = "undetermined"
+
+    trace_id = StringField(required=True)
+
+    # Provenance.  A hit without these cannot be interpreted.
+    run_id = ObjectIdField()
+    engine = StringField()
+    check_type = StringField()
+    project_id = StringField()
+    env_id = StringField()
+    account_id = StringField()
+    auth_profile_revision_id = StringField()
+    auth_context_ref = StringField()
+    pathid = IntField()
+    snapshot_id = ObjectIdField()
+    method = StringField()
+    host = StringField()
+    path = StringField()
+    parameter_name = StringField()
+    payload = StringField()
+
+    # Observation.
+    observed_at = DateTimeField(default=datetime.datetime.utcnow)
+    request_query = DictField()
+    request_body = BaseField()
+    response_status = IntField()
+    response_body = BaseField()
+    response_text = StringField()
+    response_truncated = BooleanField(default=False)
+    response_len = IntField(default=0)
+    response_hash = StringField()
+    body_sha256 = StringField()
+
+    # Retrieval aids.
+    signal_class = StringField()
+    error_signatures = ListField(StringField())
+    baseline_stable = BooleanField(default=True)
+
+    # Reference chain.
+    superseded_by = ObjectIdField()
+    derived_finding_ids = ListField(ObjectIdField())
+    derived_fact_ids = ListField(ObjectIdField())
+    note = StringField()
+    ctime = DateTimeField(default=datetime.datetime.utcnow)
+
+    meta = {
+        'collection': 'requestTrace',
+        'indexes': [
+            'run_id',
+            'engine',
+            'project_id',
+            'env_id',
+            'account_id',
+            'pathid',
+            'host',
+            'parameter_name',
+            'signal_class',
+            'error_signatures',
+            'response_hash',
+            '-observed_at',
+            {'fields': ['trace_id'], 'unique': True},
+            {'fields': ['project_id', 'host', 'path', 'parameter_name', '-observed_at']},
+            {'fields': ['run_id', 'observed_at']},
+        ]
+    }
+
+
+class precondition_fact(Document):
+    """
+    A named precondition whose satisfaction is observed, not assumed.
+
+    Facts are the edges of the unlock plan: a step becomes ready when every fact
+    it requires is satisfied.  Each fact records the evidence that satisfied it,
+    so readiness stays re-derivable instead of becoming a matter of opinion.
+
+    A fact is never marked satisfied because a step "should have" produced it.
+    Until evidence is recorded the fact stays ``unknown``, which keeps readiness
+    conservative: unknown preconditions block a step exactly like unsatisfied
+    ones.
+    """
+
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
+    UNKNOWN = "unknown"
+
+    fact_key = StringField(required=True)
+    title = StringField()
+    state = StringField(default=UNKNOWN)
+    scope = StringField(default="project")
+    project_id = StringField()
+    env_id = StringField()
+    value_summary = DictField()
+    evidence_ref = StringField()
+    evidence_trace_ids = ListField(ObjectIdField())
+    satisfied_at = DateTimeField()
+    satisfied_by_run_id = ObjectIdField()
+    note = StringField()
+    ctime = DateTimeField(default=datetime.datetime.utcnow)
+    updated_at = DateTimeField(default=datetime.datetime.utcnow)
+
+    meta = {
+        'collection': 'preconditionFact',
+        'indexes': [
+            'fact_key',
+            'state',
+            'project_id',
+            'env_id',
+            '-updated_at',
+            {'fields': ['project_id', 'env_id', 'fact_key'], 'unique': True},
+        ]
+    }
+
+
+class unlock_step(Document):
+    """
+    One step of a blocked plan, carrying explicit preconditions.
+
+    Motivation: gaps such as "the enterprise tree is not unlocked" or "no
+    high-privilege account is available" used to be tracked as static missing
+    items, so every report re-argued the same precondition and nothing advanced
+    once the precondition was finally satisfied.  Modelling them as steps with
+    dependencies lets a newly observed fact unlock the next step automatically.
+
+    Status is a manual lifecycle.  Readiness is derived from facts by
+    ``apiAnalysis.tool.unlock_plan.evaluate_steps`` and is deliberately not a
+    stored conclusion: see ``docs/deterministic_vs_model_boundary.md``.
+    """
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    ABANDONED = "abandoned"
+
+    TERMINAL = (DONE, ABANDONED)
+
+    READY = "ready"
+    BLOCKED = "blocked"
+
+    step_key = StringField(required=True)
+    title = StringField(required=True)
+    serves = StringField()
+    detail = StringField()
+    project_id = StringField()
+    env_id = StringField()
+    requires_fact_keys = ListField(StringField())
+    produces_fact_keys = ListField(StringField())
+    status = StringField(default=PENDING)
+    priority = IntField(default=100)
+    evidence_ref = StringField()
+    note = StringField()
+    ctime = DateTimeField(default=datetime.datetime.utcnow)
+    updated_at = DateTimeField(default=datetime.datetime.utcnow)
+
+    meta = {
+        'collection': 'unlockStep',
+        'indexes': [
+            'step_key',
+            'serves',
+            'project_id',
+            'env_id',
+            'status',
+            'priority',
+            'requires_fact_keys',
+            '-updated_at',
+            {'fields': ['project_id', 'env_id', 'step_key'], 'unique': True},
         ]
     }
 

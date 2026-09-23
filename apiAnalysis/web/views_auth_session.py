@@ -22,27 +22,21 @@ def logout():
 @login_check
 @templated("/sso-account.html")
 def sso_account():
-    return {'hits': SsoAccount.objects()}
+    return redirect(url_for("web.project_auth"))
 
 
 @bp_web.route("/account-add")
 @policy_check(PolicyEnum.MANAGE)
 @templated("/sso-account-edit.html")
 def sso_account_add():
-    return {'account': {}}
+    return redirect(url_for("web.project_auth"))
 
 
 @bp_web.route("/account/edit/<_id>")
 @policy_check(PolicyEnum.MANAGE)
 @templated("/sso-account-edit.html")
 def sso_account_edit(_id):
-    account = SsoAccount.objects(id=_id)
-    if len(account) == 0:
-        raise ApiException("account {} not found!".format(_id))
-    account = account[0]
-    return {
-        'account': account
-    }
+    return redirect(url_for("web.project_auth"))
 
 
 @bp_web.route("/account/show/<_id>")

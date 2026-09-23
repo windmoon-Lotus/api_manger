@@ -61,7 +61,13 @@ python tools/manage_execution.py <run-id> --retry --retry-status error
 ```
 
 调度命令只写队列；真正的网络请求由 execution worker 发送。普通批次默认只允许
-`GET`、`HEAD`、`OPTIONS`。写入类动作必须由具有读回和清理契约的专用适配器承接。
+`GET`、`HEAD`、`OPTIONS`。已获用户确认的普通快照变更请求可加 `--allow-mutation`；
+worker 会真正发送该请求，自动重试次数限制为一次。收到普通业务响应后结果进入
+`need_review` 复核队列，并保留状态码和脱敏证据；是否产生预期业务效果，需按接口实际
+能力回读或核验残留。限流、服务错误和重定向仍标为 `not_evaluable`。
+无需为了执行单独的创建或删除接口强求完整创建与删除配对。若使用版本化测试计划，
+需显式设置 `execution_policy.allow_mutation=true`、`mutation_acknowledged=true` 和
+`max_dispatch_attempts=1`。无确认仍拒绝发送变更请求。
 
 ## 多身份授权矩阵
 

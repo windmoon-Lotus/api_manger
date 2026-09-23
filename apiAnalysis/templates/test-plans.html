@@ -105,6 +105,15 @@
     </fieldset>
     {% endif %}
 
+    {% if readiness %}
+    <section class="layui-elem-quote" data-testid="plan-readiness">
+        <h3>执行前检查：{{ readiness_plan_name }}</h3>
+        <p>{% if readiness.status == 'blocked' %}存在缺项，暂不能执行。{% else %}静态配置检查通过，真实认证和正常请求基线仍需验证。{% endif %}</p>
+        {% for item in readiness.blockers %}<p><strong>{{ item.message }}</strong>：{{ item.action }}</p>{% endfor %}
+        {% for item in readiness.warnings %}<p>{{ item.message }}：{{ item.action }}</p>{% endfor %}
+        <p>本检查不发送请求，不刷新认证，不创建执行快照，也不判定漏洞。</p>
+    </section>
+    {% endif %}
     <table class="layui-table">
         <thead>
             <tr>
@@ -138,6 +147,7 @@
                 </td>
                 <td>{{ plan.ctime.strftime('%Y-%m-%d %H:%M') if plan.ctime else '' }}</td>
                 <td>
+                    <a class="layui-btn layui-btn-xs layui-btn-primary" href="{{ url_for('web.test_plans', project_id=project_id, readiness_plan_id=plan.id) }}">检查执行条件</a>
                     {% if can_manage %}
                         {% if plan.status == 'active' %}
                         <form action="{{ url_for('web.test_plans') }}" method="POST" style="display:inline">

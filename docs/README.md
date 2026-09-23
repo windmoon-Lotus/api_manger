@@ -8,6 +8,7 @@
 
 ## 首次使用
 
+- [`ai_access.md`](ai_access.md)：API Key、AI 导航和可安装的 `authcheck` 客户端；外部 AI 日常操作优先使用此入口。
 - [`START.md`](../START.md)：安装、启动、导入、排队、授权矩阵和复测的最短路径。
 - [`CONFIGURATION.md`](../CONFIGURATION.md)：环境变量、私有数据目录、MongoDB、Redis、
   本地登录和可选外部工具。
@@ -42,8 +43,8 @@
 
 ## 安全与治理参考
 
-- [`internal_high_risk_security_testing_roe.md`](internal_high_risk_security_testing_roe.md)：高风险
-  适配器的授权、预算、读回与清理要求。
+- [`internal_high_risk_security_testing_roe.md`](internal_high_risk_security_testing_roe.md)：授权范围模型、
+  强度策略、动作分级（A1–A4）、读回与清理要求。2026-09-18 起强度上限已移除。
 - [`legacy_api_security_design.md`](legacy_api_security_design.md)：原始 DOCX 的脱敏 Markdown
   摘要和概念到 V2 的映射，仅作为历史设计来源。
 

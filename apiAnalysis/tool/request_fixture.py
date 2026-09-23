@@ -16,6 +16,7 @@ from apiAnalysis.db.collection import (
     req_data,
 )
 from apiAnalysis.tool.compose_request import build_request_payload, render_request_url
+from apiAnalysis.tool.parameter_sources import NOT_PROVIDED_SOURCES
 from apiAnalysis.tool.parameter_locator import extract_values_at_locator
 
 
@@ -453,7 +454,7 @@ def request_input_view(pathid: int, project_id: str, env_id: str,
             source = "fixture"
         elif position == "cookie" or name.lower().replace("-", "_") in AUTH_PARAMETER_NAMES:
             source = "auth"
-        elif source_meta.get("source") not in {"", "empty_default", "omitted_empty_optional"} and _present(snapshot, entry):
+        elif str(source_meta.get("source") or "") not in NOT_PROVIDED_SOURCES and _present(snapshot, entry):
             source = "automatic"
         else:
             source = "missing"

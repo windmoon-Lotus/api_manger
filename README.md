@@ -37,7 +37,7 @@ application version used by the UI and system endpoint.
 
 On the first `run_web.py` start, if no administrator password is configured,
 the launcher generates a local username/password and persistent Flask key in
-`../.secrets/api-manager-web.local.env`. The password is printed once and then
+`../.secrets/infrastructure/credentials/api-manager-web.local.env`. The password is printed once and then
 reused silently. Explicit `API_MANAGER_ADMIN_PASSWORD` and
 `API_MANAGER_SECRET_KEY` environment variables always take precedence.
 

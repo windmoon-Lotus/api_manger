@@ -149,14 +149,26 @@ def ensure_parameter_data(name: str, pathids: List[int], values: List[Any], valu
     return [data.parameterid]
 
 
-def save_archive(account_id: str, canonical: str, values: List[Any], value_kind: str = "req", pathids: List[int] = None) -> int:
+def save_archive(account_id: str, canonical: str, values: List[Any], value_kind: str = "req",
+                 pathids: List[int] = None, project_id: str = "", env_id: str = "") -> int:
+    """Write one archive record under the full ``{account, project, env}`` identity.
+
+    The identity must match the one used by ``rule.analysis.parameter_archive``
+    and by ``parameter_dependency._archive_value``. Writing only ``account_id``
+    produced rows that no project-scoped lookup could ever reach.
+    """
+    if not project_id:
+        raise ValueError("save_archive requires an explicit project_id")
+    if not account_id:
+        raise ValueError("save_archive requires an explicit account_id")
+    identity = {"account_id": account_id, "project_id": str(project_id), "env_id": str(env_id or "")}
     written = 0
     for name in PARAM_ALIASES.get(canonical, [canonical]):
         pids = sorted(set((pathids or []) + pathids_for(name)))
         paramids = ensure_parameter_data(name, pids, values, value_kind=value_kind)
-        record = parameter_archive.objects(parameter=name, account_id=account_id).first()
+        record = parameter_archive.objects(parameter=name, **identity).first()
         if not record:
-            record = parameter_archive(parameter=name, account_id=account_id)
+            record = parameter_archive(parameter=name, **identity)
         record.parameterid = paramids
         if value_kind == "res":
             record.res_pathid = sorted(set(record.res_pathid or []).union(pids))
@@ -197,6 +209,25 @@ def pair_pathids(row: Dict[str, Any]) -> List[int]:
     return sorted(set(ids))
 
 
+ACCOUNT_KEY_BY_INDEX: Dict[str, str] = {}
+
+
+def account_key_for_index(index: Any) -> str:
+    """Map an evidence ``accountIndex`` onto a real project account key.
+
+    Round evidence carries only a positional index. The archive identity, and the
+    runtime resolver, key on the project's ``account_key`` (``owner``, ``peer``,
+    ...). There is deliberately no fallback: an unmapped index would produce a
+    record no account-scoped lookup could ever reach, so we refuse instead.
+    """
+    key = ACCOUNT_KEY_BY_INDEX.get(str(index))
+    if not key:
+        raise ValueError(
+            "no account key for accountIndex {0!r}; pass --account-key {0}=<owner|peer|...>".format(index)
+        )
+    return key
+
+
 def extract_generic_row(row: Dict[str, Any], by_account: Dict[str, Dict[str, Dict[str, List[Any]]]]) -> None:
     direction = row.get("direction") or {}
     owner_index = direction.get("ownerAccountIndex")
@@ -205,8 +236,8 @@ def extract_generic_row(row: Dict[str, Any], by_account: Dict[str, Dict[str, Dic
         owner_index = 0
     if attacker_index is None:
         attacker_index = 1
-    owner_account = f"account[{owner_index}]"
-    attacker_account = f"account[{attacker_index}]"
+    owner_account = account_key_for_index(owner_index)
+    attacker_account = account_key_for_index(attacker_index)
     body_found: Dict[str, List[Any]] = {}
     collect_ids(row.get("body"), body_found)
     if body_found:
@@ -232,7 +263,7 @@ def extract_generic_row(row: Dict[str, Any], by_account: Dict[str, Dict[str, Dic
             merge_found(by_account, attacker_account, found, "res")
 
 
-def seed_from_round(paths: List[Path]) -> Dict[str, Any]:
+def seed_from_round(paths: List[Path], *, project_id: str, env_id: str = "") -> Dict[str, Any]:
     by_account: Dict[str, Dict[str, Dict[str, List[Any]]]] = {}
     pathids_by_account_kind_param: Dict[str, Dict[str, Dict[str, List[int]]]] = {}
     for path in paths:
@@ -246,7 +277,7 @@ def seed_from_round(paths: List[Path]) -> Dict[str, Any]:
                 result = account_row.get("result") or {}
                 if result.get("statusCode") != 200:
                     continue
-                account_id = f"account[{index}]"
+                account_id = account_key_for_index(index)
                 found: Dict[str, List[Any]] = {}
                 collect_ids(result.get("bodySample"), found)
                 merge_found(by_account, account_id, found, "res")
@@ -276,17 +307,31 @@ def seed_from_round(paths: List[Path]) -> Dict[str, Any]:
             account_summary[account_id][value_kind] = {key: len(dedupe(values)) for key, values in values_by_name.items()}
             for canonical, values in values_by_name.items():
                 pids = pathids_by_account_kind_param.get(account_id, {}).get(value_kind, {}).get(canonical, [])
-                written += save_archive(account_id, canonical, dedupe(values), value_kind=value_kind, pathids=pids)
+                written += save_archive(account_id, canonical, dedupe(values), value_kind=value_kind,
+                                        pathids=pids, project_id=project_id, env_id=env_id)
     return {"accounts": account_summary, "archive_records_written": written}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract account-bound ids from readonly round evidence into parameter_archive.")
     parser.add_argument("--round", action="append", required=True)
+    parser.add_argument("--project-id", required=True,
+                        help="Target project_id; archive identity must match the runtime resolver.")
+    parser.add_argument("--env-id", default="", help="Target env_id (empty means the project default).")
+    parser.add_argument("--account-key", action="append", default=[],
+                        metavar="INDEX=KEY",
+                        help="Map an evidence accountIndex to a project account key, e.g. 0=owner. Repeatable.")
     args = parser.parse_args()
 
+    for item in args.account_key:
+        if "=" not in item:
+            parser.error("--account-key expects INDEX=KEY, got {0!r}".format(item))
+        index, key = item.split("=", 1)
+        ACCOUNT_KEY_BY_INDEX[index.strip()] = key.strip()
+
     _ensure_mongo_connection()
-    summary = seed_from_round([Path(item) for item in args.round])
+    summary = seed_from_round([Path(item) for item in args.round],
+                              project_id=args.project_id, env_id=args.env_id)
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0
 
